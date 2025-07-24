@@ -1,0 +1,6 @@
+{
+  "watch": ["."],
+  "ignore": ["uploads/", "public/"],
+  "ext": "js,json",
+  "exec": "eslint .; node app.js"
+}

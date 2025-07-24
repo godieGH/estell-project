@@ -1,0 +1,21 @@
+# built artifacts
+dist/
+build/
+coverage/
+
+# file uploads
+uploads/
+
+public/
+
+# compiled files
+*.min.js
+*.bundle.js
+
+# temporary junk
+logs/
+*.log
+tmp/
+
+# vendor / 3rd-party
+vendor/
