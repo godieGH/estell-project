@@ -30,6 +30,7 @@ router.get("/mentioned/user/:id", authenticateAccess, getMentionedUser);
 
 const fs = require("fs");
 const path = require("path");
+const { imageSize } = require('image-size')
 const ffmpeg = require("fluent-ffmpeg");
 
 const FFMPEG_PATH = process.env.FFMPEG_PATH;
@@ -47,23 +48,83 @@ const deleteFile = (filePath) => {
   });
 };
 
+const getVideoMetadata = (filePath) => {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        return reject(err);
+      }
+
+      const videoStream = metadata.streams.find((s) => s.codec_type === "video");
+      const audioStream = metadata.streams.find((s) => s.codec_type === "audio");
+      const format = metadata.format;
+
+      const getFps = (rFrameRate) => {
+        if (!rFrameRate) return null;
+        const parts = rFrameRate.split('/');
+        if (parts.length === 2) {
+          const numerator = parseInt(parts[0], 10);
+          const denominator = parseInt(parts[1], 10);
+          if (denominator !== 0) {
+            return numerator / denominator;
+          }
+        }
+        return null;
+      };
+
+      const meta = {
+        size: format.size ? parseInt(format.size) : null,
+        duration: format.duration ? parseFloat(format.duration) : null,
+        bit_rate: format.bit_rate ? parseInt(format.bit_rate) : null,
+        format_name: format.format_name || null,
+        format_long_name: format.format_long_name || null,
+        width: videoStream ? videoStream.width : null,
+        height: videoStream ? videoStream.height : null,
+        resolution: videoStream ? `${videoStream.width}x${videoStream.height}` : null,
+        aspect_ratio: videoStream ? videoStream.display_aspect_ratio : null,
+        fps: getFps(videoStream?.r_frame_rate),
+        video_codec: videoStream ? videoStream.codec_name : null,
+        audio_codec: audioStream ? audioStream.codec_name : null,
+      };
+      resolve(meta);
+    });
+  });
+};
+
+const getImageMetadata = async (filePath) => {
+  try {
+    const dimensions = imageSize(fs.readFileSync(filePath));
+    const meta = {
+      size: fs.statSync(filePath).size,
+      width: dimensions.width,
+      height: dimensions.height,
+    };
+    return meta;
+  } catch (error) {
+    console.error("Error getting image metadata with image-size:", error.message);
+    return {
+      size: fs.existsSync(filePath) ? fs.statSync(filePath).size : null,
+      error: "Failed to get image dimensions or metadata."
+    };
+  }
+};
+
+
 router.post(
   "/upload/",
   authenticateAccess,
   upload.single("media"),
   async (req, res) => {
     const io = req.io;
-    const socketId = req.header("X-Socket-ID"); // We'll get the socket ID from a custom header
+    const socketId = req.header("X-Socket-ID");
 
     if (!socketId) {
-      console.error("No socket ID provided in request.");
       return res
         .status(400)
         .json({ error: "Client socket identifier is missing." });
     }
 
     if (!req.file) {
-      console.error("No file uploaded or invalid file type in /upload/.");
       return res
         .status(400)
         .json({ error: "No file uploaded or invalid file type" });
@@ -77,6 +138,7 @@ router.post(
     let processedMediaType = null;
     let thumbnailUrl = null;
     let hlsOutputDir = null;
+    let mediaMetadata = {};
 
     try {
       if (req.file.mimetype.startsWith("video/")) {
@@ -97,14 +159,17 @@ router.post(
         );
         const thumbnailFileName = `${videoId}-thumbnail.jpg`;
 
-        console.log(`Starting HLS conversion for video: ${inputFilePath}`);
+        try {
+          mediaMetadata = await getVideoMetadata(inputFilePath);
+        } catch (metaErr) {
+          console.error("Error getting video metadata:", metaErr.message); // Added console.error
+          mediaMetadata = {};
+        }
 
-        // --- Inform client that HLS processing is starting ---
         io.to(socketId).emit("processing_start", {
-          message: "Processing Video...", // More specific message
+          message: "Processing Video...",
         });
 
-        // --- HLS Conversion Promise ---
         await new Promise((resolve, reject) => {
           ffmpeg(inputFilePath)
             .videoCodec("libx264")
@@ -127,34 +192,22 @@ router.post(
               "0",
             ])
             .output(masterPlaylistPath)
-            .on("start", (commandLine) => {
-              console.log(
-                "FFmpeg HLS conversion started for socket " + socketId,
-                commandLine,
-              );
-            })
             .on("progress", (progress) => {
-              // --- EMIT HLS PROGRESS TO THE SPECIFIC CLIENT ---
               if (progress.percent) {
                 const percent = Math.round(progress.percent);
-                console.log(`FFmpeg HLS progress for ${socketId}: ${percent}%`);
                 io.to(socketId).emit("hls_progress", { percent });
               }
             })
+              // eslint-disable-next-line no-unused-vars
             .on("error", (err, stdout, stderr) => {
-              console.error("FFmpeg HLS conversion error:", err.message);
-              console.log(stdout, stderr);
-              // Attempt to clean up in case of error during conversion
-              deleteFile(inputFilePath); // Clean up original file
+              console.error("FFmpeg HLS processing error:", err.message); 
+              deleteFile(inputFilePath);
               if (hlsOutputDir && fs.existsSync(hlsOutputDir)) {
                 fs.rm(hlsOutputDir, { recursive: true, force: true }, () => {});
               }
               reject(new Error("Video HLS processing failed."));
             })
             .on("end", async () => {
-              console.log("Video HLS conversion finished successfully!");
-
-              // --- Thumbnail Generation (remains the same) ---
               try {
                 await new Promise((resolveThumb) => {
                   ffmpeg(inputFilePath)
@@ -168,95 +221,64 @@ router.post(
                       resolveThumb();
                     })
                     .on("error", (err) => {
-                      console.error("Error generating thumbnail:", err.message);
-                      resolveThumb(); // Resolve anyway, thumbnail is not critical
+                      console.error("FFmpeg thumbnail error:", err.message); 
+                      resolveThumb(); 
                     });
                 });
               } catch (thumbErr) {
-                console.error(
-                  "Caught error during thumbnail generation:",
-                  thumbErr,
-                );
+                console.error("Thumbnail generation error caught in promise.", thumbErr.message); // Improved console.error
               }
 
               processedMediaUrl = `/uploads/hls/${videoId}/${masterPlaylistFileName}`;
 
-              // --- New: Convert segment000.ts to .mp4 ---
               const firstSegmentPath = path.join(hlsOutputDir, "segment000.ts");
-              const mp4FileName = `${videoId}.mp4`; // Change to .mp4
-              const mp4FilePath = path.join(hlsOutputDir, mp4FileName); // Change to .mp4
+              const mp4FileName = `${videoId}.mp4`;
+              const mp4FilePath = path.join(hlsOutputDir, mp4FileName);
 
               try {
-                // Ensure segment000.ts exists before attempting to convert it
                 if (!fs.existsSync(firstSegmentPath)) {
-                  console.warn(
-                    `segment000.ts not found at ${firstSegmentPath}. Skipping MP4 conversion.`,
-                  );
-                  originalMediaUrl = `/uploads/hls/${videoId}/segment000.ts`; // Fallback
+                  originalMediaUrl = `/uploads/hls/${videoId}/segment000.ts`;
                 } else {
-                  // --- EMIT START OF MP4 CONVERSION ---
                   io.to(socketId).emit("processing_start", {
-                    message: "Optimizing video...", // New specific message
+                    message: "Optimizing video...",
                   });
 
                   await new Promise((resolveMp4) => {
-                    // Changed variable names
                     ffmpeg(firstSegmentPath)
                       .outputOptions([
-                        "-c:v libx264", // H.264 video codec
-                        "-crf 23", // Constant Rate Factor for quality (0-51, lower is better, 23 is good default)
-                        "-preset medium", // Encoding preset (ultrafast, superfast, fast, medium, slow, slower, slowest)
-                        "-c:a aac", // AAC audio codec
-                        "-b:a 128k", // Audio bitrate
-                        "-movflags +faststart", // Optimize for web streaming
+                        "-c:v libx264",
+                        "-crf 23",
+                        "-preset medium",
+                        "-c:a aac",
+                        "-b:a 128k",
+                        "-movflags +faststart",
                       ])
-                      .output(mp4FilePath) // Output to .mp4 file
+                      .output(mp4FilePath)
                       .on("end", () => {
-                        console.log("MP4 conversion finished successfully!");
-                        originalMediaUrl = `/uploads/hls/${videoId}/${mp4FileName}`; // Use .mp4
-                        resolveMp4(); // Changed variable name
+                        originalMediaUrl = `/uploads/hls/${videoId}/${mp4FileName}`;
+                        resolveMp4();
                       })
+                        // eslint-disable-next-line no-unused-vars
                       .on("error", (err, stdout, stderr) => {
-                        console.error(
-                          "Error during MP4 conversion:",
-                          err.message,
-                        );
-                        console.log(stdout, stderr);
-                        // If MP4 fails, fall back to segment000.ts
+                        console.error("FFmpeg MP4 optimization error:", err.message); 
                         originalMediaUrl = `/uploads/hls/${videoId}/segment000.ts`;
-                        console.warn(
-                          "MP4 conversion failed, falling back to segment000.ts for originalMediaUrl.",
-                        );
-                        resolveMp4(); // Resolve to continue main flow
+                        resolveMp4();
                       })
                       .on("progress", (progress) => {
                         if (progress.percent) {
                           const percent = Math.round(progress.percent);
-                          console.log(
-                            `FFmpeg MP4 progress for ${socketId}: ${percent}%`,
-                          );
-                          io.to(socketId).emit("mp4_progress", { percent }); // New event for MP4 progress
-                        } else if (progress.timemark) {
-                          console.log(
-                            `FFmpeg MP4 timemark for ${socketId}: ${progress.timemark}`,
-                          );
+                          io.to(socketId).emit("mp4_progress", { percent });
                         }
                       })
                       .run();
                   });
                 }
               } catch (mp4Err) {
-                // Changed variable name
-                console.error(
-                  "Caught error during MP4 conversion promise:",
-                  mp4Err,
-                );
-                originalMediaUrl = `/uploads/hls/${videoId}/segment000.ts`; // Fallback
+                console.error("MP4 optimization promise error:", mp4Err.message); // Added console.error
+                originalMediaUrl = `/uploads/hls/${videoId}/segment000.ts`;
               }
 
-              // Clean up the original uploaded video file
               deleteFile(inputFilePath);
-
               resolve();
             })
             .run();
@@ -264,9 +286,15 @@ router.post(
       } else if (req.file.mimetype.startsWith("image/")) {
         processedMediaType = "image";
         processedMediaUrl = `/uploads/posts/${originalFileName}`;
-        originalMediaUrl = `/uploads/posts/${originalFileName}`; // For images, original and processed are the same
+        originalMediaUrl = `/uploads/posts/${originalFileName}`;
+
+        try {
+          mediaMetadata = await getImageMetadata(inputFilePath);
+        } catch (metaErr) {
+          console.error("Error getting image metadata:", metaErr.message);
+          mediaMetadata = {};
+        }
       } else {
-        // Delete unsupported file type
         deleteFile(inputFilePath);
         return res.status(400).json({ error: "Unsupported file type." });
       }
@@ -277,15 +305,14 @@ router.post(
           mediaUrl: processedMediaUrl,
           mediaType: processedMediaType,
           thumbnailUrl: thumbnailUrl,
+          media_metadata: mediaMetadata,
         });
       } else {
-        // If processedMediaUrl is null, it means something went wrong and the file wasn't processed
-        deleteFile(inputFilePath); // Clean up original file if processing failed
+        deleteFile(inputFilePath);
         return res.status(500).json({ error: "Failed to generate media URL." });
       }
     } catch (err) {
-      console.error("Error during media processing in /upload/ route:", err);
-      // Ensure cleanup in case of unhandled errors
+      console.error("Overall media processing error:", err.message); // Added console.error
       deleteFile(inputFilePath);
       if (hlsOutputDir && fs.existsSync(hlsOutputDir)) {
         fs.rm(hlsOutputDir, { recursive: true, force: true }, () => {});
@@ -297,6 +324,7 @@ router.post(
     }
   },
 );
+
 
 router.post("/create/", authenticateAccess, createAPostController);
 

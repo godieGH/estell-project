@@ -31,6 +31,11 @@ Posts.init(
       allowNull: true,
       field: "media_url",
     },
+    mediaMetadata: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      field: "media_metadata",
+    },
     thumbnailUrl: {
       type: DataTypes.STRING(255),
       allowNull: true,

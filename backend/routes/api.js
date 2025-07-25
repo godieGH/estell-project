@@ -1461,6 +1461,8 @@ router.get('/get/msgs/:convo_id', authenticateAccess, async (req, res) => {
    }
 })
 
-
+router.get('/test', async (req, res) => {
+   res.json(await Post.findOne({where: {id : 50}}))
+})
 
 module.exports = router;

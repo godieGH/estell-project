@@ -245,6 +245,7 @@ exports.createAPostController = async (req, res) => {
       type,
       body,
       mediaUrl,
+      media_metadata,
       thumbnailUrl,
       originalMedia,
       link_url,
@@ -262,6 +263,7 @@ exports.createAPostController = async (req, res) => {
     if (typeof link_url === "string") link_url = JSON.parse(link_url);
     if (typeof location === "string") location = JSON.parse(location);
     if (typeof keywords === "string") keywords = JSON.parse(keywords);
+    if (typeof media_metadata === "string") media_metadata = JSON.parse(media_metadata);
 
     const schedule_at = scheduleAt ? new Date(scheduleAt) : null;
     const newPost = await Post.create({
@@ -269,6 +271,7 @@ exports.createAPostController = async (req, res) => {
       type,
       body,
       mediaUrl,
+      mediaMetadata: media_metadata,
       thumbnailUrl,
       originalMedia,
       linkUrl: link_url,
