@@ -25,7 +25,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const { sendMessage, readMessage } = require('./sockets/');
+const { sendMessage } = require('./sockets/');
 
 io.on("connection", (socket) => {
   
@@ -37,8 +37,6 @@ io.on("connection", (socket) => {
   })
   
   sendMessage(io, socket)
-  
-  readMessage(io, socket)
   
   console.log(`A user connected with socket ID: ${socket.id}`);
   socket.on("disconnect", () => {
