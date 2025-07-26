@@ -770,6 +770,7 @@ async function submitPost() {
   let mediaUrl = null
   let originalMedia = null
   let thumbnailUrl = null
+  let media_metadata = null
 
   const processingStartListener = (data) => {
     notif({ message: data.message, caption: '0%' })
@@ -810,8 +811,8 @@ async function submitPost() {
             notif({ message: 'Upload complete. Processing...', caption: 'Please wait...' })
           }
         },
-      })
-      ;({ mediaUrl, originalMedia, thumbnailUrl } = response.data)
+      });({ mediaUrl, originalMedia, thumbnailUrl, media_metadata } = response.data)
+     // console.log(response.data)
     } catch (err) {
       notif({
         type: 'negative',
@@ -835,6 +836,7 @@ async function submitPost() {
     type: postType.value,
     body: postContent.value,
     mediaUrl,
+    media_metadata,
     thumbnailUrl,
     originalMedia,
     link_url: links.value,
