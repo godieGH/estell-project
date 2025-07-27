@@ -5,6 +5,7 @@
   "scripts": {
     "test": "jest",
     "pm2": "pm2 start app.js",
+    "dev": "node app",
     "start": "nodemon",
     "format": "prettier --write \"{api,middleware,controllers,routes,models,views}/**/*.{js,ejs}\" app.js"
   },

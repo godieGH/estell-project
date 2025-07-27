@@ -1,6 +1,6 @@
 *.DS_Store
-client/.thumbs.db
-client/node_modules
+**/*.thumbs.db
+**/*node_modules
 
 # Quasar core related directories
 client/.quasar
@@ -30,6 +30,8 @@ client/yarn-error.log*
 *.njsproj
 *.sln
 
+**/*.log
+
 # local .env files
 client/.env.local*
 
@@ -39,3 +41,6 @@ client/.env.local*
 backend/node_modules
 backend/public
 backend/uploads
+
+
+!backend/uploads/**/*.gitkeep
