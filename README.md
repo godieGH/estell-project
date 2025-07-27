@@ -109,7 +109,7 @@ Note: for best practice create a features or a fix branch ... and do a PR (pull 
    Note: The new made built files are then in `client/dist/`
       
 > You can serve them with a static file server `quasar serve`, or `nginx`
-> But we reccomend, you to copy the `dist/pwa/*` or `dist/spa/*` or what ever you built mode was to, `backend/public/` and start a `backend/` server to server them in `public/public/`
+> But we reccomend, you to copy the `dist/pwa/*` or `dist/spa/*` or whatever you built mode was, to `backend/public/` and start a `backend/` server to serve them in the `backend/public/`
                   
 ``` bash 
    npm start  #run in the backend/ this will serve the public and express app at same URL 
@@ -134,33 +134,73 @@ Note: for best practice create a features or a fix branch ... and do a PR (pull 
    quasar clean # To clean built dist, caches and temp files
 ```
 
-* With those above that's what you have to run this project in your machine, don't worry about databses table the `express backend` is designed with help or `sequelize` ORM to automatically create the tables just ensure you have `Mysql` running and a db with the name as said above
-* Unfortunately, we don't use sequelize migrations and seeders I hope someone should add this feature too so we could ensure nicer and well databses handles and seeding for better development experience, we can use `sequelize cli`
-* The models are well defined, best practise, you should pass through to study them and understand them
+* With those above that's what you have to run this project in your machine, don't worry about databses table the `express backend` is designed with help or `sequelize` ORM to automatically create the tables just ensure you have `Mysql` running and a db with the name as mentioned above
+* Unfortunately, we don't use sequelize migrations and seeders, I hope someone should add this feature too, so we could ensure nicer and well databses handlings and seeding for better development experience, we can use `sequelize cli`
+* The models are well defined, best practise; You should and must pass throughout the project and study them, understanding the structure, schema, bussness logics, routing both client and backend, Api calls, sequelize, socket.io, user-authentication and authorization, 
+* You can create an account in the app to see If You were a user, how would you feel the experience
 
 Note: Please before jumping into development phase make sure, You pass and understand the structure of this whole project to avoid unnecessary prone-to-errors
 
 
 ### Starting the dev processes
-> You must want to add a feature, fix a bug, correct some thing or even want to try sometime new, then this is your part
+> You must want to add some features, fix a bug, correct and refactor somethings/features or even want to try somethings new, then this is your part
   
   #### Steps to start dev
   1. first run `git pull origin` to ensure you project is up-to-date with the one in the repo, 
   2. Then run `git branch` to see if you are on the `main` branch 
-  3. Create a branch for your feature, bug fix or what ever you wish to, run `git checkout -b feature/feature-name-here` the best practise to write branch names:-
+  3. Create a branch for your feature, bug fix, refactor or whatever you wish to, run `git checkout -b feature/feature-name-here` the best practise to write branch names:-
       * eg. feature/user-authentication, bugfix/backend-login-logic, docs/UI-usage-docs, refactor/optimise-db-table-migrations
       * Use something standard that others can understand 
   4. Now since you are in your branch, run `git branch` again to see the active branch it should be what you created
-  5. You can now edit, create modify files and what ever you want here and run `git add <file>` to stage these files and commit them rigt away, best practise to frequently stage and commit to keep track of what you are working through
-  6. `git push`, you can push yout branch to the repo for more next steps like PRs, approval and merge to the main, run `git push -u origin <branch-name>` This will push your branch to the repo
-  7. For PRs you can come in this repo, and create one and wait for others to approve your feature / bugfix or whatever you was developing
+  5. You can now edit, create modify files and whatever you want up here and just run `git add <file>` to stage your changes and commit them rigt away, best practise is to frequently stage and commit to keep track of what you are working on, avoid long term commits and ensure commits ain't so undescreptive and none-impact one
+  6. `git push`, you can push your branch to the repo for more next steps like PRs, approval and merge to the main, run `git push -u origin <branch-name>` This will push your branch to the repo
+  7. For PRs you can come in this repo, and create one and wait for others to approve your feature / bugfix, refactor or whatever you was developing
 
-Note: We use `git pull origin main` to pull  and ensure the main is up-to-date, and run `git merge main` in our new created branches to merge and see if our new codes we are working on are not in conflict with new main codes, Please don't `git rebase` it is not recommended
+Note: We use `git pull origin main` to pull  and ensure the main is up-to-date, and run `git merge main` in our new created branches to merge and see if our new codes, what we are working on are not in conflict with new main codes (merge conflicts), Please don't `git rebase` it is not recommended, 
+    
+> Just run `git pull main` and `git merge main` (to merge the main with your branch) frequently before edit, push, or else to ensure you code is up-to-date and no merge comflict
 
-Note also: before you create new feature that is not in the issue board on this repo, raise an issue assing yourself on if that issue is listed and someone else is assigned yoh should jump to another issues or just dev and see whose modifications can be worth it , this is a best practise to ensure everyone knows what they are working on
+Note also: before you create new feature that is not in the issue board on this repo, raise an issue assign yourself on it, if that issue is listed and someone else is assigned you should jump to another issues or just develop and see whose modifications can be worth it , this is a best practise to ensure everyone knows what they are working on, Just know that someone else might be working on that feature or bug fix too
 
-> Please if someone wants to edit this readme and add something that others might understand and work well with our project, you are welcome,
 
-By: - godieGH
+### Some other things to know
+> You might want to run this project concurrently at the root dir, it is a monorepo but independently on dependencies (I mean you have to run `npm install` to both client/ and backend/ even though some packages might be similar to both), I think, We might later try to implement the `npm workspaces` to handle dependencies and packages that both part (client/ and backend/) need, This is an issue and anybody can try to add this feature too
 
+run 
+
+``` bash
+   npm install #at root to install concurrently— a pkg that allows you to run different projects concurrently
+```
+
+Then, you can use (at the project root)
+``` bash
+
+npm run dev # to run both backend and client at the same time
+#or
+npm run start-backend #to start just the backend
+#or
+npm run start-client #to start just the backend
+#or
+npm run build-client #To build a simple SPA mode client app, to build different or other modes you need to implement quasar-cli commands, which can not be ran at root go down to client/ for that
+#or
+npm run install-backend #to install backend dependencies
+#or
+npm run install-client #to install client dependencies
+#or
+npm run install-all #to install dependencies in both of them at once
+```
+
+* While I was developing at the client I encountered a problem specifically it might be my machine; but during build under PWA mode, if I allowed minification by `terser` (a tool that quasar uses for minification) to `true` in the `quasar.config.js` then esbuild and the build process would fail/crash saying there is an existing huge file (more than 5Mbs or something).. then I would disable minification or run `quasar build -m pwa --debug` (Which also skips minification) to achieve build process
+* It might work on your machine, so just go in the file `client/quasar.config.js` and look for a block similar:-
+``` js
+   build: {
+      //other build configs
+      
+      minify: false, //comment it out or just write `minify: true,` to allow minification on build
+      
+      //other build configs
+   }
+```
+
+> *Please if someone wants to edit this readme and add something that others might understand and work well with our project, you are humbely welcome*
   
