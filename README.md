@@ -1,4 +1,4 @@
-# Estell Social App
+# Estell Social Media App
 
 > A social media app project... built with `express.js` => `(backend/)` and `vue.js` => `(client/)` ~ the vue uses 'quasar framework wrapper for broarder pre-build tools, icons, UI components and etc.
 
@@ -43,7 +43,7 @@ Note: for best practice create a features or a fix branch ... and do a PR (pull 
 1. copy the repo `ssh` or `htpp` URL
 2. Open Your terminal in your machine, navigate to a directory you want to clone the project to, then run this command
    ``` bash
-      git clone <repo-url>
+      git clone git@github.com:godieGH/estell-project.git
    ```
       > This will clone (download) this whole repo to your machine, ensure you have all the required environment setups as mentioned above
 
