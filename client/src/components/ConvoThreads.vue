@@ -276,7 +276,7 @@ async function fetchHistMsg() {
   try {
     const { data } = await api.get(`/api/get/msgs/${props.currentConversation.id}/`)
     messages.value = [...data]
-    //console.log(data)
+    console.log(data)
   } catch (err) {
     console.error(err.message)
   }
@@ -714,6 +714,7 @@ const downloadFile = async (messageId, fileUrl, fileName) => {
     downloadingMessageId.value = null;
   }
 };
+
 
 
 </script>

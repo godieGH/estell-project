@@ -1,6 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { Op } = require('sequelize');
-const { Message, Participant, Conversation, ReadStatus, User } = require('../models'); // Destructure User here
+const { Message, Conversation, User } = require('../models'); // Destructure User here
 
 // Helper function for JWT authentication
 const authenticateUser = (token) => {
@@ -112,55 +111,6 @@ module.exports = function(io, socket) {
                last_message_at: msg.sent_at,
                last_message_id: msg.id,
             });
-
-            // Find the participant
-            const participant = await Participant.findOne({
-               where : {
-                  [Op.and]: {
-                     conversation_id: msg.conversation_id,
-                     user_id: userId
-                  }
-               }
-            });
-
-            let participant_id;
-            if (participant) {
-                participant_id = participant.id;
-            } else {
-                // Handle the case where the participant is not found.
-                // This might indicate a data inconsistency or an unjoined user.
-                // For now, let's log an error and potentially skip read status update.
-                console.error(`Participant not found for conversation_id: ${msg.conversation_id}, user_id: ${userId}`);
-                // You might want to 'ack' an error back to the client here,
-                // or simply return to avoid further errors.
-                if (typeof ack === 'function') {
-                    ack({ success: false, error: 'Participant not found for read status update.' });
-                }
-                return; // Exit if participant not found
-            }
-
-            const read_status = await ReadStatus.findOne({
-               where: {
-                  [Op.and]: {
-                    conversation_id: msg.conversation_id,
-                    participant_id: participant_id // Now participant_id will be defined
-                  }
-               }
-            });
-
-            //console.log(read_status);
-
-            if(read_status) {
-               await read_status.update({
-                  xxxx: JSON.stringify(msg.sent_at),
-               });
-            } else {
-               await ReadStatus.create({
-                  conversation_id: msg.conversation_id,
-                  participant_id: participant_id,
-                  read_at: msg.sent_at // Set read_at when creating for the first time
-               });
-            }
          }
 
          socket.to(conversation_id).emit('new_msg', msg);

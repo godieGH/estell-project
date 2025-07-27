@@ -979,7 +979,7 @@ if (FFPROBE_PATH) {
   console.warn("FFPROBE_PATH is not set in environment variables.");
 }
 
-function probeVideo(filePath) {
+function getProbeData(filePath) {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err) {
@@ -1064,7 +1064,7 @@ router.post('/upload/file', authenticateAccess, msgUploadAttachment.single('file
       if (mimeType.startsWith('image/')) {
         // Your existing image metadata extraction logic
         try {
-          const probeData = await probeVideo(filePath);
+          const probeData = await getProbeData(filePath);
           const imageStream = probeData.streams.find(stream => stream.codec_type === 'video');
           if (imageStream) {
             metadata = {
@@ -1099,7 +1099,7 @@ router.post('/upload/file', authenticateAccess, msgUploadAttachment.single('file
         }
       } else if (mimeType.startsWith('video/')) {
         // Your existing video metadata extraction logic
-        const probeData = await probeVideo(filePath);
+        const probeData = await getProbeData(filePath);
         const { format, streams } = probeData;
         const videoStream = streams.find(stream => stream.codec_type === 'video');
         const audioStream = streams.find(stream => stream.codec_type === 'audio');
@@ -1126,7 +1126,7 @@ router.post('/upload/file', authenticateAccess, msgUploadAttachment.single('file
         }
       } else if (mimeType.startsWith('audio/')) {
         // Your existing audio metadata extraction logic
-        const probeData = await probeVideo(filePath);
+        const probeData = await getProbeData(filePath);
         const { format, streams } = probeData;
         const audioStream = streams.find(stream => stream.codec_type === 'audio');
         metadata = {
@@ -1288,7 +1288,7 @@ router.post('/upload/video', authenticateAccess, msgUploadAttachment.single('fil
     let attachmentMetadata = null;
 
     try {
-      const originalProbedData = await probeVideo(originalFilePath);
+      const originalProbedData = await getProbeData(originalFilePath);
       const videoStream = originalProbedData.streams.find(s => s.codec_type === 'video');
       
       attachmentMetadata = {
@@ -1323,7 +1323,7 @@ router.post('/upload/video', authenticateAccess, msgUploadAttachment.single('fil
         attachmentMetadata.is_hls_converted = true;
 
         try {
-            const hlsProbedData = await probeVideo(hlsPlaylistAbsolutePath);
+            const hlsProbedData = await getProbeData(hlsPlaylistAbsolutePath);
             attachmentMetadata.duration = hlsProbedData.format.duration || attachmentMetadata.duration;
             attachmentMetadata.size = hlsProbedData.format.size || attachmentMetadata.size;
             attachmentMetadata.bit_rate = hlsProbedData.format.bit_rate || attachmentMetadata.bit_rate;
@@ -1461,8 +1461,5 @@ router.get('/get/msgs/:convo_id', authenticateAccess, async (req, res) => {
    }
 })
 
-router.get('/test', async (req, res) => {
-   res.json(await Post.findOne({where: {id : 50}}))
-})
 
 module.exports = router;

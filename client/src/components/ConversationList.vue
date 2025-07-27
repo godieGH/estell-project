@@ -117,7 +117,7 @@ async function fetchConversation() {
 
     try {
       const { data } = await api.get(`/api/get/all/user/conversations/${type}`)
-      console.log(data)
+      //console.log(data)
       myConversations.value = [...data]
     } catch (err) {
       console.log(err.message)
