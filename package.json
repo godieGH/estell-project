@@ -1,0 +1,32 @@
+{
+  "name": "estell-project",
+  "version": "1.0.0",
+  "description": "A social media app",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "concurrently --names \"backend,client\" \"npm run dev --prefix backend\" \"npm run dev --prefix client\"",
+    "start-backend": "npm start --prefix backend",
+    "start-client": "npm run dev --prefix client",
+    "build-client": "npm build --prefix client",
+    "install-backend": "npm install --prefix backend",
+    "install-client": "npm install --prefix client",
+    "install-all": "npm install --prefix backend && npm install --prefix client"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/godieGH/estell-project.git"
+  },
+  "keywords": [
+    "estell",
+    "social app"
+  ],
+  "author": "godieGH",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/godieGH/estell-project/issues"
+  },
+  "homepage": "https://github.com/godieGH/estell-project#readme",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
