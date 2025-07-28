@@ -202,5 +202,48 @@ npm run install-all #to install dependencies in both of them at once
    }
 ```
 
+
+#### migrations & seeders
+> They help us to manipulate db schema (create/drop table, add, alter, modify constraints of table columns), seeders help us to feed data into this table more effeciently and helpfull during dev and even on test and production.
+> This project is configured to use migrations and seeders, think of them as version control of your databses, in here you don't have to create tables manually just follow the steps below
+
+navigate to root and run
+``` bash
+npm run db:migrate #this will create all the tables and match your db with current project schema
+```
+
+then run
+``` bash
+npm run db:seed #to seed the user table with user pre-defined data for a start
+````
+
+* You might need to `cd backend/` to run other `sequelize cli` commands to create `migrations` and `seeder` files. ensure the `backend/config/config.js` file is available because running `sequelize cli` command in `backend/` needs it
+
+Note: During, development, developers are required to mandentory utilize model + migrations + seeder to interact and manipulate databses, this is compursory for this version of Application to ensure all team members(all developers) have the same db state and version controll
+
+run these commands in backend/
+
+```bash
+npx sequelize-cli migration:generate --name "descreptive-name-of-migrations"
+```
+
+Then go and edit the created migration skeleton file, define your changes(table, column, attributes etc), and ensure the schema defined matches the model - that means the output table is mapped by the responsible Model to interact well with it
+
+run
+```bash
+npx sequelize-cli db:migrate #to excute unsolved migrations
+```
+run
+```bash
+npx sequelize-cli seed:generate #to generate a new seeder files
+```
+
+and run
+```bash
+npx sequelize-cli db:seed:all #to apply changes to new unexcutable seeders
+```
+
+* Don't worry about version control of both seeders and migrations file just, don't edit ran existing migrations and seeders, for new changes just create new migrations or new seeders files
+
 > *Please if someone wants to edit this readme and add something that others might understand and work well with our project, you are humbely welcome*
   

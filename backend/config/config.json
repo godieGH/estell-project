@@ -1,0 +1,26 @@
+{
+  "development": {
+    "username": "root",
+    "password": "@2.]BGWWttEi8.Oe",
+    "database": "estell-app-db",
+    "host": "127.0.0.1",
+    "dialect": "mysql",
+    "seederStorage": "sequelize"
+  },
+  "test": {
+    "username": "root",
+    "password": "@2.]BGWWttEi8.Oe",
+    "database": "estell-app-db_test",
+    "host": "127.0.0.1",
+    "dialect": "mysql",
+    "seederStorage": "sequelize"
+  },
+  "production": {
+    "username": "root",
+    "password": "@2.]BGWWttEi8.Oe",
+    "database": "estell-app-db",
+    "host": "127.0.0.1",
+    "dialect": "mysql",
+    "seederStorage": "sequelize"
+  }
+}
