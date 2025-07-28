@@ -5,8 +5,8 @@ const Follower = require("./Follower");
 const Post = require("./Post");
 const PasswordResetToken = require("./PasswordResetToken");
 const UserPreference = require("./UserPreference");
-const Likes = require("./Likes");
-const Comment = require("./Comments");
+const Likes = require("./Like");
+const Comment = require("./Comment");
 const CommentLike = require("./CommentLike");
 const Share = require("./Share");
 const Conversation = require("./Conversation");
@@ -191,15 +191,6 @@ ReadStatus.belongsTo(Conversation, {
   foreignKey: "conversation_id",
 });
 
-
-
-async function init() {
-  await sequelize.sync({
-    // alter: true   // dev-only if you want auto-migrations
-  });
-}
-
-init().catch(console.error);
 
 module.exports = {
   sequelize,
