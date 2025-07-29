@@ -36,6 +36,10 @@ io.on("connection", (socket) => {
      })
   })
   
+  socket.on('read_msg', ({msgId, convoId}) => {
+     socket.to(convoId).emit('someone_raed_msg', msgId)
+  })
+  
   sendMessage(io, socket)
   
   console.log(`A user connected with socket ID: ${socket.id}`);

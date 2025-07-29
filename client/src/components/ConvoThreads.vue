@@ -312,17 +312,19 @@ onMounted(async () => {
   }
 
   socket.on('new_msg', recieveNew);
+  socket.on('someone_raed_msg', someone_raed_msg);
 
   
   observer = new IntersectionObserver(
     async ([entry]) => {
       if (entry.isIntersecting && entry.target.dataset.messageId) {
-         const readMsg = messages.value.findIndex(msg => msg.id === entry.target.dataset.messageId)
-         if(Number.isInteger(readMsg)) {
+         const readMsgIndex = messages.value.findIndex(msg => msg.id === entry.target.dataset.messageId)
+         const readMsg = messages.value.find(msg => msg.id === entry.target.dataset.messageId)
+         if(Number.isInteger(readMsgIndex)) {
             //messages.value[readMsg].read_by.push(userStore.user.id)
             try{
-                const { data } = await api.post(`/api/read/msg/${messages.value[readMsg].conversation_id}/${entry.target.dataset.messageId}/`)
-                 console.log(data)
+               await api.post(`/api/read/msg/${messages.value[readMsgIndex].conversation_id}/${entry.target.dataset.messageId}/`)
+               socket.emit('read_msg', {msgId: readMsg.id, convoId: readMsg.conversation_id})
                observer.unobserve(entry.target); 
             } catch(e) {
                console.error(e.message)
@@ -368,6 +370,10 @@ async function recieveNew(msg) {
   } else {
     messages.value.push(newMsg);
   }
+}
+
+function someone_raed_msg() {
+   fetchHistMsg()
 }
 
 
@@ -506,6 +512,7 @@ onUnmounted(() => {
     currentAudio.value = null
   }
   socket.off('new_msg', recieveNew);
+  socket.off('someone_raed_msg', someone_raed_msg);
   if (observer) { // Make sure observer is defined before disconnecting
     observer.disconnect();
   }
