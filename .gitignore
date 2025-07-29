@@ -29,6 +29,7 @@ client/yarn-error.log*
 *.ntvs*
 *.njsproj
 *.sln
+.env
 
 **/*.log
 

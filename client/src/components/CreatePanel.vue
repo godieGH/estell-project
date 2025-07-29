@@ -811,8 +811,9 @@ async function submitPost() {
             notif({ message: 'Upload complete. Processing...', caption: 'Please wait...' })
           }
         },
-      });({ mediaUrl, originalMedia, thumbnailUrl, media_metadata } = response.data)
-     // console.log(response.data)
+      })
+      ;({ mediaUrl, originalMedia, thumbnailUrl, media_metadata } = response.data)
+      // console.log(response.data)
     } catch (err) {
       notif({
         type: 'negative',

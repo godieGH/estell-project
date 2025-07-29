@@ -65,7 +65,11 @@ Note: for best practice create a features or a fix branch ... and do a PR (pull 
    
    * Best practise find a good or what-so-ever-you-like Mysql client or DB management tool to configure your machine databse and run the server
   
-   * In the ./backend/.env file there is lines
+
+   * Set your environment variables in both client and backend, there is these files called .env.template they provide template for you to create new .env files for your project environment variables
+   * create .env file for each, set db environment variables, secrets and paths, some other default values are pre-set within .env.template
+   
+   * In the ./backend/.env file there should be a line
    ``` bash
       FFMPEG_PATH=/path/to/files/usr/bin/ffmpeg
       FFPROBE_PATH=/path/to/files/usr/bin/ffprobe

@@ -13,7 +13,7 @@
       virtual-scroll-item-size="35"
     >
        
-       <div :ref="message.addObserverRef?'readbyRef':null" :key="message.id" :data-message-id="message.id">
+       <div :ref="(message.notReadByMe && !message.isMine)?'notReadbyMeRef':null" :key="message.id" :data-message-id="message.id">
         <div
           v-if="message.type === 'date_separator'"
           class="message-system text-center text-caption text-grey-6"
@@ -252,7 +252,6 @@
     </q-virtual-scroll>
   </div>
 </template>
-
 <script setup>
 import CustomVideoPlayer from 'components/VideoPlayer.vue'
 import { ref, computed, onUnmounted, watch, onMounted, nextTick } from 'vue'
@@ -270,13 +269,16 @@ const props = defineProps({
 const userStore = useUserStore()
 const $q = useQuasar()
 
+const notReadbyMeRef = ref(null)
+let observer;
+
 const messages = ref([])
 
 async function fetchHistMsg() {
   try {
     const { data } = await api.get(`/api/get/msgs/${props.currentConversation.id}/`)
     messages.value = [...data]
-    console.log(data)
+    //console.log(data)
   } catch (err) {
     console.error(err.message)
   }
@@ -309,18 +311,38 @@ onMounted(async () => {
     messages.value = [...new Set([...messages.value, ...queuedMsgs])]
   }
 
-
   socket.on('new_msg', recieveNew);
+
+  
+  observer = new IntersectionObserver(
+    async ([entry]) => {
+      if (entry.isIntersecting && entry.target.dataset.messageId) {
+         const readMsg = messages.value.findIndex(msg => msg.id === entry.target.dataset.messageId)
+         if(Number.isInteger(readMsg)) {
+            //messages.value[readMsg].read_by.push(userStore.user.id)
+            try{
+                const { data } = await api.post(`/api/read/msg/${messages.value[readMsg].conversation_id}/${entry.target.dataset.messageId}/`)
+                 console.log(data)
+               observer.unobserve(entry.target); 
+            } catch(e) {
+               console.error(e.message)
+            }
+         }
+      }
+    },
+    {
+      threshold: 0.9,
+    }
+  );
 })
 
 
-async function recieveNew(msg) { // Use 'async' because we'll await inside
+async function recieveNew(msg) { 
   if (msg.conversation_id !== props.currentConversation.id) return;
 
   const newMsg = {
     id: msg.id,
     conversation_id: msg.conversation_id,
-    // sender will be populated after the API call
     sender_id: msg.sender_id,
     sender_type: msg.sender_type,
     content: msg.content,
@@ -332,17 +354,15 @@ async function recieveNew(msg) { // Use 'async' because we'll await inside
   };
 
   try {
-    // Fetch sender details only if it's a user message
     if (msg.sender_type === 'user') {
       const senderResponse = await api.get(`/api/get/user/${msg.sender_id}`);
       newMsg.sender = senderResponse.data; // Assuming your API returns data in .data
     }
   } catch (error) {
     console.error('Error fetching sender details:', error);
-    newMsg.sender = null; // Or some default error state
+    newMsg.sender = null;
   }
 
-  // If it's a system message with content.type === "initial_msg", push to the beginning
   if (newMsg.sender_type === 'system' && newMsg.content && newMsg.content.type === 'initial_msg') {
     messages.value.unshift(newMsg);
   } else {
@@ -486,6 +506,9 @@ onUnmounted(() => {
     currentAudio.value = null
   }
   socket.off('new_msg', recieveNew);
+  if (observer) { // Make sure observer is defined before disconnecting
+    observer.disconnect();
+  }
 })
 
 const groupedMessages = computed(() => {
@@ -495,6 +518,9 @@ const groupedMessages = computed(() => {
 
   const processed = [];
   let lastDate = null; // To keep track of the last message's date
+
+  // Assume userStore is available in the scope, e.g., from a Pinia store or similar
+  // const userStore = useUserStore(); // Example of how you might get it
 
   // Sort messages to ensure they are in chronological order before processing
   const sortedMessages = [...messages.value].sort((a, b) => new Date(a.sent_at) - new Date(b.sent_at));
@@ -526,11 +552,22 @@ const groupedMessages = computed(() => {
       currentMessage.showAvatar = showAvatar;
     }
 
+    // 3. Add isMine and notReadByMe flags
+    // Assuming `userStore.user.id` contains the ID of the current user
+    currentMessage.isMine = currentMessage.sender_id === userStore.user.id;
+
+    if (!currentMessage.isMine) {
+      currentMessage.notReadByMe = !currentMessage.read_by || !currentMessage.read_by.includes(userStore.user.id);
+    } else {
+      currentMessage.notReadByMe = false; // Messages sent by the user are considered read by them.
+    }
+
     processed.push(currentMessage);
   }
 
   return processed;
 });
+
 
 const scrollToBottom = () => {
   if (virtualScroll.value && groupedMessages.value.length > 0) {
@@ -715,9 +752,18 @@ const downloadFile = async (messageId, fileUrl, fileName) => {
   }
 };
 
-
-
+watch(notReadbyMeRef, (newValue, oldValue) => {
+  if (newValue && observer) {
+    if (oldValue && oldValue !== newValue) {
+      observer.unobserve(oldValue);
+    }
+    observer.observe(newValue);
+  } else if (!newValue && oldValue && observer) {
+    observer.unobserve(oldValue);
+  }
+}, { immediate: true }); 
 </script>
+
 
 <style scoped lang="scss">
 .chat-container {

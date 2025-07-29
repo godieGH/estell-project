@@ -1462,4 +1462,62 @@ router.get('/get/msgs/:convo_id', authenticateAccess, async (req, res) => {
 })
 
 
+router.post('/read/msg/:convo_id/:msg_id/', authenticateAccess, async (req, res) => {
+   try {
+      const msgId = req.params.msg_id;
+      const convoId = req.params.convo_id;
+
+      const conversation = await Conversation.findByPk(convoId);
+
+      if (!conversation) {
+         return res.status(404).json({ message: "Conversation not found" });
+      }
+
+      const participant = await Participant.findOne({
+         where: {
+            user_id: req.userId,
+            conversation_id: convoId
+         },
+         attributes: ["id"],
+         raw: true
+      });
+
+      if (!participant) {
+         return res.status(404).json({ message: "Participant not found in this conversation" });
+      }
+
+      const pId = participant.id;
+
+      // 1. Find if a ReadStatus record already exists for this participant and conversation
+      const existingReadStatus = await ReadStatus.findOne({
+         where: {
+            participant_id: pId,
+            conversation_id: convoId
+         }
+      });
+
+      // 2. If it exists, delete it
+      if (existingReadStatus) {
+         await existingReadStatus.destroy();
+      }
+
+      // 3. Always create a new ReadStatus record
+      const newReadStatus = await ReadStatus.create({
+         participant_id: pId,
+         conversation_id: convoId,
+         read_at: new Date(), // Set the current timestamp
+         // If you want to track the last message read when created:
+         // last_read_message_id: msgId,
+      });
+
+      res.json(newReadStatus); // Return the newly created read status
+   } catch (e) {
+      console.error("Error in read/msg route:", e); // Log the error for debugging
+      res.status(500).json({ message: e.message });
+   }
+});
+
+
+
+
 module.exports = router;
