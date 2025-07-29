@@ -340,8 +340,8 @@ watch(
 )
 
 const logoSrc = computed(() => {
-   const mode = $q.dark.isActive ? 'white' : 'red';
-   return new URL(`../assets/e-logo-${mode}.png`, import.meta.url).href;
+  const mode = $q.dark.isActive ? 'white' : 'red'
+  return new URL(`../assets/e-logo-${mode}.png`, import.meta.url).href
 })
 
 const showMessenger = ref(false)
@@ -416,12 +416,12 @@ onMounted(async () => {
     },
     15 * 60 * 1000,
   )
-  
+
   //getConversations()
-  imb.initializeStore();
+  imb.initializeStore()
   messageStore.initializeStore()
-  socket.on("refresh", () => {
-     getConversations();
+  socket.on('refresh', () => {
+    getConversations()
   })
 
   await settingsStore.fetcUserPreferedSettings()
@@ -453,12 +453,12 @@ onMounted(async () => {
 })
 
 async function getConversations() {
-   try {
-      const { data } = await api.get('/api/rooms')
-      socket.emit('create_room', data)
-   } catch(err) {
-      console.error(err.message)
-   }
+  try {
+    const { data } = await api.get('/api/rooms')
+    socket.emit('create_room', data)
+  } catch (err) {
+    console.error(err.message)
+  }
 }
 
 onBeforeUnmount(() => {

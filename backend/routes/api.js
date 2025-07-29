@@ -20,15 +20,19 @@ const {
 } = require("../models");
 const { encrypt, decrypt } = require("../utils/encryption"); // Adjust path as needed
 
-
-router.get('/', async (req, res) => {
-   try {
-      await sequelize.authenticate();
-      res.status(200).json({ status: 'ok', message: 'Service is ready' });
-   } catch (err) {
-      console.error('Database connection failed:', err);
-      res.status(503).json({ status: 'error', message: 'Service not available. Database connection failed.' });
-   }
+router.get("/", async (req, res) => {
+  try {
+    await sequelize.authenticate();
+    res.status(200).json({ status: "ok", message: "Service is ready" });
+  } catch (err) {
+    console.error("Database connection failed:", err);
+    res
+      .status(503)
+      .json({
+        status: "error",
+        message: "Service not available. Database connection failed.",
+      });
+  }
 });
 
 router.get("/feeds/fetch-feeds", authenticateAccess, async (req, res) => {
@@ -662,6 +666,13 @@ router.delete("/post/:id/delete", authenticateAccess, async (req, res) => {
   }
 });
 
+
+/**
+ * This is where DM logic start
+ *
+ */
+
+
 router.get("/all/people/to/dm", authenticateAccess, async (req, res) => {
   try {
     const user = await User.findByPk(req.userId, {
@@ -794,23 +805,27 @@ router.get(
   async (req, res) => {
     try {
       if (req.params.type === "private") {
-        const userId = req.userId;
+        const userId = req.userId; // Assuming req.userId is correctly set by authenticateAccess
 
         // 1. Find all private conversation IDs the current user is a part of
         const participantConversations = await Participant.findAll({
           where: {
             user_id: userId,
           },
-          attributes: ["conversation_id"],
-          raw: true, // Get plain JSON objects
+          attributes: ["conversation_id", "id"], // 'id' here is the Participant ID
+          raw: true,
         });
 
         const conversationIds = participantConversations.map(
           (p) => p.conversation_id,
         );
 
+        const userParticipantIdMap = new Map(
+          participantConversations.map((p) => [p.conversation_id, p.id]),
+        );
+
         if (conversationIds.length === 0) {
-          return res.json([]); // No conversations found for the user
+          return res.json([]);
         }
 
         // 2. Fetch the conversations themselves
@@ -819,27 +834,30 @@ router.get(
             id: { [Op.in]: conversationIds },
             type: "private",
           },
-          order: [["last_message_at", "DESC"]], // Sort by last message time
+          order: [["last_message_at", "DESC"]],
+          raw: true,
         });
 
-        // Prepare a map for easier lookup
+        /* 
         const conversationMap = new Map(
-          conversations.map((conv) => [conv.id, conv.toJSON()]),
+          conversations.map((conv) => [conv.id, conv]),
         );
-
+        
+        */
+        
         // 3. For each conversation, find the other participant
-        const allParticipants = await Participant.findAll({
+        const allOtherParticipants = await Participant.findAll({
           where: {
             conversation_id: { [Op.in]: conversationIds },
-            user_id: { [Op.ne]: userId }, // Get the other participant
+            user_id: { [Op.ne]: userId },
           },
           attributes: ["conversation_id", "user_id"],
           raw: true,
         });
 
         const otherUserIds = Array.from(
-          new Set(allParticipants.map((p) => p.user_id)),
-        ); // Get unique user IDs of other participants
+          new Set(allOtherParticipants.map((p) => p.user_id)),
+        );
 
         // 4. Fetch user details for all other participants
         const otherUsers = await User.findAll({
@@ -852,58 +870,94 @@ router.get(
 
         const userMap = new Map(otherUsers.map((user) => [user.id, user]));
 
-        // 5. Fetch the single most recent message for each conversation
-        // This can be tricky with a single query efficiently.
-        // A common pattern is to use a subquery or `union all` if your DB supports it,
-        // but for simplicity and clarity here, we'll fetch them individually or in batches.
-        // For a large number of conversations, consider a more optimized way to fetch latest messages.
+        // --- Fetch ReadStatus using the specific Participant ID for the current user ---
+        const currentUserParticipantIds = Array.from(
+          userParticipantIdMap.values(),
+        );
 
+        const readStatuses = await ReadStatus.findAll({
+          where: {
+            participant_id: { [Op.in]: currentUserParticipantIds },
+            conversation_id: { [Op.in]: conversationIds },
+          },
+          attributes: ["conversation_id", "read_at", "participant_id"],
+          raw: true,
+        });
+
+        const readStatusMap = new Map();
+        readStatuses.forEach((rs) => {
+          if (
+            userParticipantIdMap.get(rs.conversation_id) === rs.participant_id
+          ) {
+            readStatusMap.set(rs.conversation_id, rs.read_at);
+          }
+        });
+
+        // --- Optimized Unread Count Calculation ---
+        // Prepare an array to hold promises for unread counts
+        const unreadCountsPromises = conversations.map(async (conv) => {
+          const readAt = readStatusMap.get(conv.id);
+          let unreadCount = 0;
+
+          if (readAt) {
+            unreadCount = await Message.count({
+              where: {
+                conversation_id: conv.id,
+                sent_at: { [Op.gt]: readAt },
+              },
+            });
+          } else {
+            // If no read_at status exists for this conversation for the current user,
+            // it means they haven't read any messages yet, so count all messages.
+            unreadCount = await Message.count({
+              where: {
+                conversation_id: conv.id,
+              },
+            });
+          }
+          return { conversation_id: conv.id, unreadCount };
+        });
+
+        const unreadCounts = await Promise.all(unreadCountsPromises);
+        const unreadCountsMap = new Map(
+          unreadCounts.map((uc) => [uc.conversation_id, uc.unreadCount]),
+        );
+
+        // 5. Fetch the single most recent message for each conversation
         const latestMessages = await Message.findAll({
           where: {
             conversation_id: { [Op.in]: conversationIds },
           },
-          // This is a common trick for getting the latest per group in Postgres, for other DBs,
-          // you might need a window function or a subquery.
           order: [
-            ["conversation_id", "ASC"], // Group by conversation
-            ["sent_at", "DESC"], // Then order by sent_at
+            ["conversation_id", "ASC"],
+            ["sent_at", "DESC"],
           ],
-          // This part requires a database-specific solution if you want to fetch only 1 per conversation efficiently in a single query.
-          // For now, we'll fetch all messages and filter in JS, which might be inefficient for many messages.
-          // A better approach for many conversations/messages:
-          // Use a subquery with ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY sent_at DESC) = 1
-          // Or a separate query for each conversation if the number is small.
+          raw: true,
         });
 
-        // Map messages to conversations
         const latestMessageMap = new Map();
-        conversations.forEach((conv) => {
-          const latestMsg = latestMessages.find(
-            (msg) => msg.conversation_id === conv.id,
-          );
-          if (latestMsg) {
-            latestMessageMap.set(conv.id, latestMsg.toJSON());
+        latestMessages.forEach((msg) => {
+          if (!latestMessageMap.has(msg.conversation_id)) {
+            latestMessageMap.set(msg.conversation_id, msg);
           }
         });
 
-        // If your `Message` model has a `json` field that isn't being parsed,
-        // you might need to manually parse it here: `JSON.parse(latestMsg.jsonField)`
-
         // 6. Combine all data
         const myConversations = conversations.map((conv) => {
-          const conversationData = conversationMap.get(conv.id);
+          const conversationData = conv;
 
-          // Get the other participant for this conversation
-          const otherParticipant = allParticipants.find(
+          const otherParticipant = allOtherParticipants.find(
             (p) => p.conversation_id === conv.id,
           );
+
           let otherUserData = null;
           if (otherParticipant) {
             otherUserData = userMap.get(otherParticipant.user_id);
           }
+          otherUserData = otherUserData || null;
 
-          // Get the latest message for this conversation
           const latestMessage = latestMessageMap.get(conv.id);
+          const unreadCount = unreadCountsMap.get(conv.id) || 0;
 
           return {
             ...conversationData,
@@ -911,10 +965,9 @@ router.get(
               {
                 user: otherUserData,
               },
-              // You might want to include the current user's participant data here as well,
-              // or just keep the other user's info as "otherUser" for display.
             ],
-            messages: latestMessage ? [latestMessage] : [], // Ensure it's an array for consistency
+            messages: latestMessage ? [latestMessage] : [],
+            unreadCount: unreadCount,
           };
         });
 
@@ -923,45 +976,51 @@ router.get(
         res.status(400).json({ message: "Invalid conversation type" });
       }
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ message: err.message });
+      console.error("Error fetching user conversations:", err);
+      res
+        .status(500)
+        .json({ message: "Failed to fetch conversations: " + err.message });
     }
   },
 );
 
+router.get("/get/user/:id/", (req, res) => {
+  const userId = req.params.id;
 
-
-router.get('/get/user/:id/', (req, res) => {
-   const userId = req.params.id;
-
-   User.findByPk(userId, {
-      attributes: ['id', 'username', 'avatar']
-   })
-   .then(user => {
+  User.findByPk(userId, {
+    attributes: ["id", "username", "avatar"],
+  })
+    .then((user) => {
       if (user) {
-         res.json(user);
+        res.json(user);
       } else {
-         res.status(404).json({ message: 'User not found' });
+        res.status(404).json({ message: "User not found" });
       }
-   })
-   .catch(err => {
+    })
+    .catch((err) => {
       console.error(err.message);
-      res.status(500).json({ message: 'Server error', error: err.message });
-   });
+      res.status(500).json({ message: "Server error", error: err.message });
+    });
 });
 
-
-const { msgUploadAttachment, msgUploadVoiceNote, convertAudioToM4a, convertVideoToHLS, zipFile } = require("../middleware/msgMulter")
+const {
+  msgUploadAttachment,
+  msgUploadVoiceNote,
+  convertAudioToM4a,
+  convertVideoToHLS,
+  zipFile,
+} = require("../middleware/msgMulter");
 function generateRandomAlphaNumeric(length = 8) {
-  let result = '';
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = "";
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const charactersLength = characters.length;
   for (let i = 0; i < length; i++) {
     result += characters.charAt(Math.floor(Math.random() * charactersLength));
   }
   return result;
 }
-const BASE_UPLOAD_DIR = 'uploads';
+const BASE_UPLOAD_DIR = "uploads";
 const ffmpeg = require("fluent-ffmpeg");
 
 const FFMPEG_PATH = process.env.FFMPEG_PATH;
@@ -990,534 +1049,674 @@ function getProbeData(filePath) {
   });
 }
 
+const { readFileSync } = require("node:fs");
+const { imageSize } = require("image-size");
+const pdfParse = require("pdf-parse");
 
-const { readFileSync } = require('node:fs')
-const { imageSize } = require('image-size')
-const pdfParse = require('pdf-parse');
+router.post(
+  "/upload/image",
+  authenticateAccess,
+  msgUploadAttachment.single("file"),
+  async (req, res) => {
+    // If multer is successful, req.file will be available
+    if (!req.file) {
+      return res.status(400).send({ error: "File upload failed." });
+    }
 
-router.post('/upload/image', authenticateAccess, msgUploadAttachment.single('file'), async (req, res) => {
-  // If multer is successful, req.file will be available
-  if (!req.file) {
-    return res.status(400).send({ error: 'File upload failed.' });
-  }
-  
-  if (req.file) {
-    const originalFilePath = req.file.path;
-    const fileUrl = `/uploads/messages/attachment/${req.body.conversation_id}/${req.file.filename}`;
-    try {
-        console.log(originalFilePath)
+    if (req.file) {
+      const originalFilePath = req.file.path;
+      const fileUrl = `/uploads/messages/attachment/${req.body.conversation_id}/${req.file.filename}`;
+      try {
+        console.log(originalFilePath);
         const dimensions = imageSize(readFileSync(originalFilePath));
         const metadata = {
-            width: dimensions.width,
-            height: dimensions.height,
-            mimetype: req.file.mimetype,
-            size: req.file.size,
-            aspect_ratio: dimensions.width / dimensions.height
+          width: dimensions.width,
+          height: dimensions.height,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+          aspect_ratio: dimensions.width / dimensions.height,
         };
         res.status(200).json({
-            url: fileUrl,
-            attachment_metadata: metadata
+          url: fileUrl,
+          attachment_metadata: metadata,
         });
-    } catch (err) {
-        console.error('Error getting image dimensions:', err);
+      } catch (err) {
+        console.error("Error getting image dimensions:", err);
         // Still send a success response, but without dimensions if it failed
         res.status(200).json({
-            url: fileUrl,
-            attachment_metadata: {
-                mimetype: req.file.mimetype,
-                size: req.file.size
-            }
+          url: fileUrl,
+          attachment_metadata: {
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+          },
         });
+      }
     }
-}
-});
+  },
+);
 
-router.post('/upload/file', authenticateAccess, msgUploadAttachment.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'File upload failed.' });
-  }
+router.post(
+  "/upload/file",
+  authenticateAccess,
+  msgUploadAttachment.single("file"),
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "File upload failed." });
+    }
 
-  let metadata = null;
-  const filePath = req.file.path;
-  const mimeType = req.file.mimetype;
-  const fileSize = req.file.size;
-  const conversationId = req.body.conversation_id;
+    let metadata = null;
+    const filePath = req.file.path;
+    const mimeType = req.file.mimetype;
+    const fileSize = req.file.size;
+    const conversationId = req.body.conversation_id;
 
-  let finalFileUrl = null;
-  let finalFilePath = filePath; // This will hold the path to the file we'll provide metadata for
+    let finalFileUrl = null;
+    let finalFilePath = filePath; // This will hold the path to the file we'll provide metadata for
 
-  // Define MIME types that should NOT be zipped and should be processed directly
-  const unzippedMimeTypes = [
-    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-    'video/mp4', 'video/webm', 'video/3gpp', 'video/avi', 'video/x-flv', 'video/x-matroska', 'video/quicktime',
-    'audio/mpeg', 'audio/ogg', 'audio/aac', 'audio/x-m4a', 'audio/mp4', 'audio/amr',
-    'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'text/plain', 'text/csv', 'application/json', 'text/html', 'application/xml',
+    // Define MIME types that should NOT be zipped and should be processed directly
+    const unzippedMimeTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "video/mp4",
+      "video/webm",
+      "video/3gpp",
+      "video/avi",
+      "video/x-flv",
+      "video/x-matroska",
+      "video/quicktime",
+      "audio/mpeg",
+      "audio/ogg",
+      "audio/aac",
+      "audio/x-m4a",
+      "audio/mp4",
+      "audio/amr",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "text/plain",
+      "text/csv",
+      "application/json",
+      "text/html",
+      "application/xml",
     ];
 
-  try {
-    // Check if the current file's MIME type is among those that should NOT be zipped
-    if (unzippedMimeTypes.includes(mimeType)) {
-      // Logic for files that should NOT be zipped (original processing)
-      if (mimeType.startsWith('image/')) {
-        // Your existing image metadata extraction logic
-        try {
-          const probeData = await getProbeData(filePath);
-          const imageStream = probeData.streams.find(stream => stream.codec_type === 'video');
-          if (imageStream) {
-            metadata = {
-              type: 'image',
-              mime_type: mimeType,
-              width: imageStream.width,
-              height: imageStream.height,
-              codec: imageStream.codec_name,
-              size: fileSize,
-            };
-          } else {
+    try {
+      // Check if the current file's MIME type is among those that should NOT be zipped
+      if (unzippedMimeTypes.includes(mimeType)) {
+        // Logic for files that should NOT be zipped (original processing)
+        if (mimeType.startsWith("image/")) {
+          // Your existing image metadata extraction logic
+          try {
+            const probeData = await getProbeData(filePath);
+            const imageStream = probeData.streams.find(
+              (stream) => stream.codec_type === "video",
+            );
+            if (imageStream) {
+              metadata = {
+                type: "image",
+                mime_type: mimeType,
+                width: imageStream.width,
+                height: imageStream.height,
+                codec: imageStream.codec_name,
+                size: fileSize,
+              };
+            } else {
+              const dimensions = imageSize(readFileSync(filePath));
+              metadata = {
+                type: "image",
+                mime_type: mimeType,
+                width: dimensions.width,
+                height: dimensions.height,
+                size: fileSize,
+              };
+            }
+          } catch (err) {
+            // Fallback for image processing if probe fails
+            console.error("Error getting image dimensions/probe:", err);
             const dimensions = imageSize(readFileSync(filePath));
             metadata = {
-              type: 'image',
+              type: "image",
               mime_type: mimeType,
               width: dimensions.width,
               height: dimensions.height,
               size: fileSize,
             };
           }
-        } catch (err) {
-            // Fallback for image processing if probe fails
-            console.error('Error getting image dimensions/probe:', err);
-            const dimensions = imageSize(readFileSync(filePath));
+        } else if (mimeType.startsWith("video/")) {
+          // Your existing video metadata extraction logic
+          const probeData = await getProbeData(filePath);
+          const { format, streams } = probeData;
+          const videoStream = streams.find(
+            (stream) => stream.codec_type === "video",
+          );
+          const audioStream = streams.find(
+            (stream) => stream.codec_type === "audio",
+          );
+          metadata = {
+            type: "video",
+            mime_type: mimeType,
+            duration: parseFloat(format.duration),
+            bit_rate: parseInt(format.bit_rate),
+            size: fileSize,
+          };
+          if (videoStream) {
+            metadata.width = videoStream.width;
+            metadata.height = videoStream.height;
+            metadata.avg_frame_rate = videoStream.avg_frame_rate
+              ? eval(videoStream.avg_frame_rate)
+              : null;
+            metadata.aspect_ratio = videoStream.display_aspect_ratio;
+            metadata.video_codec = videoStream.codec_name;
+            metadata.pixel_format = videoStream.pix_fmt;
+          }
+          if (audioStream) {
+            metadata.audio_codec = audioStream.codec_name;
+            metadata.audio_bit_rate = parseInt(audioStream.bit_rate);
+            metadata.sample_rate = parseInt(audioStream.sample_rate);
+            metadata.channels = audioStream.channels;
+          }
+        } else if (mimeType.startsWith("audio/")) {
+          // Your existing audio metadata extraction logic
+          const probeData = await getProbeData(filePath);
+          const { format, streams } = probeData;
+          const audioStream = streams.find(
+            (stream) => stream.codec_type === "audio",
+          );
+          metadata = {
+            type: "audio",
+            mime_type: mimeType,
+            duration: parseFloat(format.duration),
+            bit_rate: parseInt(format.bit_rate),
+            size: fileSize,
+            codec: audioStream?.codec_name,
+            sample_rate: audioStream ? parseInt(audioStream.sample_rate) : null,
+            channels: audioStream?.channels,
+          };
+        } else if (mimeType === "application/pdf") {
+          // Your existing PDF metadata extraction logic
+          try {
+            const dataBuffer = fs.readFileSync(filePath);
+            const pdfData = await pdfParse(dataBuffer);
             metadata = {
-                type: 'image',
-                mime_type: mimeType,
-                width: dimensions.width,
-                height: dimensions.height,
-                size: fileSize,
+              type: "document",
+              subtype: "pdf",
+              pages: pdfData.numpages,
+              size: fileSize,
             };
-        }
-      } else if (mimeType.startsWith('video/')) {
-        // Your existing video metadata extraction logic
-        const probeData = await getProbeData(filePath);
-        const { format, streams } = probeData;
-        const videoStream = streams.find(stream => stream.codec_type === 'video');
-        const audioStream = streams.find(stream => stream.codec_type === 'audio');
-        metadata = {
-          type: 'video',
-          mime_type: mimeType,
-          duration: parseFloat(format.duration),
-          bit_rate: parseInt(format.bit_rate),
-          size: fileSize,
-        };
-        if (videoStream) {
-          metadata.width = videoStream.width;
-          metadata.height = videoStream.height;
-          metadata.avg_frame_rate = videoStream.avg_frame_rate ? eval(videoStream.avg_frame_rate) : null;
-          metadata.aspect_ratio = videoStream.display_aspect_ratio;
-          metadata.video_codec = videoStream.codec_name;
-          metadata.pixel_format = videoStream.pix_fmt;
-        }
-        if (audioStream) {
-          metadata.audio_codec = audioStream.codec_name;
-          metadata.audio_bit_rate = parseInt(audioStream.bit_rate);
-          metadata.sample_rate = parseInt(audioStream.sample_rate);
-          metadata.channels = audioStream.channels;
-        }
-      } else if (mimeType.startsWith('audio/')) {
-        // Your existing audio metadata extraction logic
-        const probeData = await getProbeData(filePath);
-        const { format, streams } = probeData;
-        const audioStream = streams.find(stream => stream.codec_type === 'audio');
-        metadata = {
-          type: 'audio',
-          mime_type: mimeType,
-          duration: parseFloat(format.duration),
-          bit_rate: parseInt(format.bit_rate),
-          size: fileSize,
-          codec: audioStream?.codec_name,
-          sample_rate: audioStream ? parseInt(audioStream.sample_rate) : null,
-          channels: audioStream?.channels,
-        };
-      } else if (mimeType === 'application/pdf') {
-        // Your existing PDF metadata extraction logic
-        try {
-          const dataBuffer = fs.readFileSync(filePath);
-          const pdfData = await pdfParse(dataBuffer);
+          } catch (parseError) {
+            console.error("Error parsing PDF metadata:", parseError);
+            metadata = {
+              type: "document",
+              subtype: "pdf",
+              pages: null,
+              size: fileSize,
+              error: "Failed to parse PDF metadata.",
+            };
+          }
+        } else if (mimeType.startsWith("text/")) {
+          // This will now catch text/plain, text/csv, application/json, text/html, application/xml
+          // Your existing text metadata extraction logic
+          const fileContent = fs.readFileSync(filePath, "utf-8");
+          const lines = fileContent.split("\n").length;
+          const words = fileContent
+            .split(/\s+/)
+            .filter((word) => word.length > 0).length;
+          const characters = fileContent.length;
           metadata = {
-            type: 'document',
-            subtype: 'pdf',
-            pages: pdfData.numpages,
+            type: "text",
+            mime_type: mimeType,
+            lines: lines,
+            words: words,
+            characters: characters,
             size: fileSize,
           };
-        } catch (parseError) {
-          console.error("Error parsing PDF metadata:", parseError);
+        } else {
+          const fileStats = fs.statSync(filePath);
+          const subtype =
+            path.extname(req.file.originalname).substring(1) || "unknown";
           metadata = {
-            type: 'document',
-            subtype: 'pdf',
-            pages: null,
+            type: "application",
+            subtype,
+            mime_type: mimeType,
             size: fileSize,
-            error: "Failed to parse PDF metadata."
+            created_at: fileStats.birthtime,
+            modified_at: fileStats.mtime,
           };
         }
-      } else if (mimeType.startsWith('text/')) { // This will now catch text/plain, text/csv, application/json, text/html, application/xml
-        // Your existing text metadata extraction logic
-        const fileContent = fs.readFileSync(filePath, 'utf-8');
-        const lines = fileContent.split('\n').length;
-        const words = fileContent.split(/\s+/).filter(word => word.length > 0).length;
-        const characters = fileContent.length;
-        metadata = {
-          type: 'text',
-          mime_type: mimeType,
-          lines: lines,
-          words: words,
-          characters: characters,
-          size: fileSize,
-        };
+        finalFileUrl = `/uploads/messages/attachment/${conversationId}/${req.file.filename}`;
       } else {
-        const fileStats = fs.statSync(filePath);
-        const subtype = path.extname(req.file.originalname).substring(1) || 'unknown';
+        // THIS IS WHERE WE HANDLE FILES THAT ARE NOT IN unzippedMimeTypes (i.e., they should be zipped)
+        console.log(`File type not in unzippedMimeTypes, zipping: ${mimeType}`);
+
+        const zipRelativeOutputDir = path.join(
+          "messages",
+          "attachment",
+          conversationId,
+        );
+        const zipAbsoluteOutputDir = path.join(
+          __dirname,
+          "..",
+          BASE_UPLOAD_DIR,
+          zipRelativeOutputDir,
+        );
+        const zipFileName = `${req.userId}-file-${generateRandomAlphaNumeric()}`;
+
+        const zippedFilePath = await zipFile(
+          filePath,
+          zipAbsoluteOutputDir,
+          zipFileName,
+        );
+        finalFilePath = zippedFilePath; // Update the path for metadata processing
+
+        // Delete the original uploaded file after zipping
+        fs.unlink(filePath, (err) => {
+          if (err)
+            console.error(
+              "Error deleting original unsupported file after zipping:",
+              err,
+            );
+        });
+
+        const zippedFileRelativePath = path.relative(
+          path.join(__dirname, "..", BASE_UPLOAD_DIR),
+          zippedFilePath,
+        );
+        finalFileUrl = `/${BASE_UPLOAD_DIR}/${zippedFileRelativePath.replace(/\\/g, "/")}`;
+
+        const fileStats = fs.statSync(finalFilePath); // Get stats of the zipped file
         metadata = {
-          type: 'application',
-          subtype,
-          mime_type: mimeType,
-          size: fileSize,
+          type: "application",
+          subtype: "zip",
+          mime_type: "application/zip",
+          original_mime_type: mimeType, // Keep track of the original type
+          original_filename: req.file.originalname,
+          size: fileStats.size, // Use the size of the zipped file
           created_at: fileStats.birthtime,
           modified_at: fileStats.mtime,
         };
       }
-      finalFileUrl = `/uploads/messages/attachment/${conversationId}/${req.file.filename}`;
-
-    } else {
-      // THIS IS WHERE WE HANDLE FILES THAT ARE NOT IN unzippedMimeTypes (i.e., they should be zipped)
-      console.log(`File type not in unzippedMimeTypes, zipping: ${mimeType}`);
-
-      const zipRelativeOutputDir = path.join('messages', 'attachment', conversationId);
-      const zipAbsoluteOutputDir = path.join(__dirname, '..', BASE_UPLOAD_DIR, zipRelativeOutputDir);
-      const zipFileName = `${req.userId}-file-${generateRandomAlphaNumeric()}`;
-
-      const zippedFilePath = await zipFile(filePath, zipAbsoluteOutputDir, zipFileName);
-      finalFilePath = zippedFilePath; // Update the path for metadata processing
-
-      // Delete the original uploaded file after zipping
-      fs.unlink(filePath, (err) => {
-        if (err) console.error('Error deleting original unsupported file after zipping:', err);
-      });
-
-      const zippedFileRelativePath = path.relative(path.join(__dirname, '..', BASE_UPLOAD_DIR), zippedFilePath);
-      finalFileUrl = `/${BASE_UPLOAD_DIR}/${zippedFileRelativePath.replace(/\\/g, '/')}`;
-
-      const fileStats = fs.statSync(finalFilePath); // Get stats of the zipped file
-      metadata = {
-        type: 'application',
-        subtype: 'zip',
-        mime_type: 'application/zip',
-        original_mime_type: mimeType, // Keep track of the original type
-        original_filename: req.file.originalname,
-        size: fileStats.size, // Use the size of the zipped file
-        created_at: fileStats.birthtime,
-        modified_at: fileStats.mtime,
-      };
-    }
-  } catch (error) {
-    console.error("Error processing file metadata or zipping:", error);
-    // If an error occurred during processing, try to clean up the original file
-    if (finalFilePath === filePath && fs.existsSync(filePath)) {
+    } catch (error) {
+      console.error("Error processing file metadata or zipping:", error);
+      // If an error occurred during processing, try to clean up the original file
+      if (finalFilePath === filePath && fs.existsSync(filePath)) {
         fs.unlink(filePath, (err) => {
-            if (err) console.error('Error deleting original file on error:', err);
+          if (err) console.error("Error deleting original file on error:", err);
         });
-    }
-    metadata = {
-      type: 'unknown',
-      mime_type: mimeType,
-      size: fileSize, // Use original fileSize as processing failed
-      error: error.message
-    };
-    // Even if there's an error, try to provide a URL to the original (if not zipped)
-    if (!finalFileUrl) {
-        finalFileUrl = `/uploads/messages/attachment/${conversationId}/${req.file.filename}`;
-    }
-  }
-
-  res.status(200).json({ url: finalFileUrl, attachment_metadata: metadata });
-});
-
-
-router.post('/upload/voice-note', authenticateAccess, msgUploadVoiceNote.single('audio'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded.' });
-    }
-
-    const conversationId = req.body.conversation_id;
-    const originalFilePath = req.file.path;
-
-    const m4aRelativeOutputDir = path.join('messages', 'voice_notes', 'm4a', conversationId);
-    const m4aAbsoluteOutputDir = path.join(__dirname, '..', BASE_UPLOAD_DIR, m4aRelativeOutputDir);
-    const m4aFileName = `${req.userId}-voice-${generateRandomAlphaNumeric()}`;
-
-    await fs.promises.mkdir(m4aAbsoluteOutputDir, { recursive: true });
-
-     await convertAudioToM4a(originalFilePath, m4aAbsoluteOutputDir, m4aFileName);
-    const convertedM4aRelativePath = path.join(m4aRelativeOutputDir, m4aFileName);
-
-    fs.unlink(originalFilePath, (err) => {
-      if (err) console.error('Error deleting original voice note file:', err);
-    });
-
-    res.status(200).json({
-      message: 'Voice note uploaded and converted to M4A successfully',
-      url: `/${BASE_UPLOAD_DIR}/${convertedM4aRelativePath.replace(/\\/g, '/')}.m4a`,
-    });
-
-  } catch (error) {
-    console.error('Voice note upload/conversion error:', error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-
-router.post('/upload/video', authenticateAccess, msgUploadAttachment.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded.' });
-    }
-
-    const conversationId = req.body.conversation_id;
-    const originalFilePath = req.file.path;
-    let attachmentMetadata = null;
-
-    try {
-      const originalProbedData = await getProbeData(originalFilePath);
-      const videoStream = originalProbedData.streams.find(s => s.codec_type === 'video');
-      
-      attachmentMetadata = {
-        width: videoStream ? videoStream.width : null,
-        height: videoStream ? videoStream.height : null,
-        duration: originalProbedData.format.duration,
-        size: originalProbedData.format.size,
-        mimetype: req.file.mimetype,
-        bit_rate: originalProbedData.format.bit_rate,
-        avg_frame_rate: videoStream ? videoStream.avg_frame_rate : null,
-        display_aspect_ratio: videoStream ? videoStream.width / videoStream.height : null,
-        is_hls_converted: false,
-      };
-    } catch (err) {
-      console.error('FFprobe error on original file:', err.message);
-      attachmentMetadata = null;
-    }
-    
-    if (req.file.mimetype.startsWith('video/')) {
-      const hlsRelativeOutputDir = path.join('messages', 'attachment', 'hls', conversationId);
-      const hlsAbsoluteOutputDir = path.join(__dirname, '..', BASE_UPLOAD_DIR, hlsRelativeOutputDir);
-      const hlsFileNamePrefix = `${req.userId}-video-${generateRandomAlphaNumeric()}`;
-
-      await fs.promises.mkdir(hlsAbsoluteOutputDir, { recursive: true });
-
-      const hlsPlaylistAbsolutePath = await convertVideoToHLS(originalFilePath, hlsAbsoluteOutputDir, hlsFileNamePrefix);
-      const hlsPlaylistRelativePath = path.relative(path.join(__dirname, '..', BASE_UPLOAD_DIR), hlsPlaylistAbsolutePath);
-
-      if (attachmentMetadata) {
-        attachmentMetadata.mimetype = 'application/x-mpegURL';
-        attachmentMetadata.hls_playlist_url = `/${BASE_UPLOAD_DIR}/${hlsPlaylistRelativePath.replace(/\\/g, '/')}`;
-        attachmentMetadata.is_hls_converted = true;
-
-        try {
-            const hlsProbedData = await getProbeData(hlsPlaylistAbsolutePath);
-            attachmentMetadata.duration = hlsProbedData.format.duration || attachmentMetadata.duration;
-            attachmentMetadata.size = hlsProbedData.format.size || attachmentMetadata.size;
-            attachmentMetadata.bit_rate = hlsProbedData.format.bit_rate || attachmentMetadata.bit_rate;
-        } catch (hlsProbeErr) {
-            console.warn('FFprobe error on HLS playlist:', hlsProbeErr.message);
-        }
       }
+      metadata = {
+        type: "unknown",
+        mime_type: mimeType,
+        size: fileSize, // Use original fileSize as processing failed
+        error: error.message,
+      };
+      // Even if there's an error, try to provide a URL to the original (if not zipped)
+      if (!finalFileUrl) {
+        finalFileUrl = `/uploads/messages/attachment/${conversationId}/${req.file.filename}`;
+      }
+    }
+
+    res.status(200).json({ url: finalFileUrl, attachment_metadata: metadata });
+  },
+);
+
+router.post(
+  "/upload/voice-note",
+  authenticateAccess,
+  msgUploadVoiceNote.single("audio"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded." });
+      }
+
+      const conversationId = req.body.conversation_id;
+      const originalFilePath = req.file.path;
+
+      const m4aRelativeOutputDir = path.join(
+        "messages",
+        "voice_notes",
+        "m4a",
+        conversationId,
+      );
+      const m4aAbsoluteOutputDir = path.join(
+        __dirname,
+        "..",
+        BASE_UPLOAD_DIR,
+        m4aRelativeOutputDir,
+      );
+      const m4aFileName = `${req.userId}-voice-${generateRandomAlphaNumeric()}`;
+
+      await fs.promises.mkdir(m4aAbsoluteOutputDir, { recursive: true });
+
+      await convertAudioToM4a(
+        originalFilePath,
+        m4aAbsoluteOutputDir,
+        m4aFileName,
+      );
+      const convertedM4aRelativePath = path.join(
+        m4aRelativeOutputDir,
+        m4aFileName,
+      );
 
       fs.unlink(originalFilePath, (err) => {
-        if (err) console.error('Error deleting original video file:', err);
+        if (err) console.error("Error deleting original voice note file:", err);
       });
 
       res.status(200).json({
-        message: 'Video uploaded and converted to HLS successfully',
-        url: attachmentMetadata ? attachmentMetadata.hls_playlist_url : `/${BASE_UPLOAD_DIR}/${hlsPlaylistRelativePath.replace(/\\/g, '/')}`,
-        attachment_metadata: attachmentMetadata,
+        message: "Voice note uploaded and converted to M4A successfully",
+        url: `/${BASE_UPLOAD_DIR}/${convertedM4aRelativePath.replace(/\\/g, "/")}.m4a`,
       });
+    } catch (error) {
+      console.error("Voice note upload/conversion error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  },
+);
 
-    } else {
-      const attachmentRelativeOutputDir = path.join('messages', 'attachment', conversationId);
-      const attachmentAbsoluteOutputDir = path.join(__dirname, '..', BASE_UPLOAD_DIR, attachmentRelativeOutputDir);
-      const newAttachmentFileName = `${req.userId}-${generateRandomAlphaNumeric()}${path.extname(req.file.originalname)}`;
-      const newAttachmentAbsolutePath = path.join(attachmentAbsoluteOutputDir, newAttachmentFileName);
-
-      await fs.promises.mkdir(attachmentAbsoluteOutputDir, { recursive: true });
-      await fs.promises.rename(originalFilePath, newAttachmentAbsolutePath);
-
-      const newAttachmentRelativePath = path.join(attachmentRelativeOutputDir, newAttachmentFileName);
-
-      if (attachmentMetadata) {
-          attachmentMetadata.mimetype = req.file.mimetype;
-          attachmentMetadata.is_hls_converted = false;
+router.post(
+  "/upload/video",
+  authenticateAccess,
+  msgUploadAttachment.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded." });
       }
 
-      res.status(200).json({
-        message: 'Attachment uploaded successfully',
-        url: `/${BASE_UPLOAD_DIR}/${newAttachmentRelativePath.replace(/\\/g, '/')}`,
-        attachment_metadata: attachmentMetadata,
-      });
+      const conversationId = req.body.conversation_id;
+      const originalFilePath = req.file.path;
+      let attachmentMetadata = null;
+
+      try {
+        const originalProbedData = await getProbeData(originalFilePath);
+        const videoStream = originalProbedData.streams.find(
+          (s) => s.codec_type === "video",
+        );
+
+        attachmentMetadata = {
+          width: videoStream ? videoStream.width : null,
+          height: videoStream ? videoStream.height : null,
+          duration: originalProbedData.format.duration,
+          size: originalProbedData.format.size,
+          mimetype: req.file.mimetype,
+          bit_rate: originalProbedData.format.bit_rate,
+          avg_frame_rate: videoStream ? videoStream.avg_frame_rate : null,
+          display_aspect_ratio: videoStream
+            ? videoStream.width / videoStream.height
+            : null,
+          is_hls_converted: false,
+        };
+      } catch (err) {
+        console.error("FFprobe error on original file:", err.message);
+        attachmentMetadata = null;
+      }
+
+      if (req.file.mimetype.startsWith("video/")) {
+        const hlsRelativeOutputDir = path.join(
+          "messages",
+          "attachment",
+          "hls",
+          conversationId,
+        );
+        const hlsAbsoluteOutputDir = path.join(
+          __dirname,
+          "..",
+          BASE_UPLOAD_DIR,
+          hlsRelativeOutputDir,
+        );
+        const hlsFileNamePrefix = `${req.userId}-video-${generateRandomAlphaNumeric()}`;
+
+        await fs.promises.mkdir(hlsAbsoluteOutputDir, { recursive: true });
+
+        const hlsPlaylistAbsolutePath = await convertVideoToHLS(
+          originalFilePath,
+          hlsAbsoluteOutputDir,
+          hlsFileNamePrefix,
+        );
+        const hlsPlaylistRelativePath = path.relative(
+          path.join(__dirname, "..", BASE_UPLOAD_DIR),
+          hlsPlaylistAbsolutePath,
+        );
+
+        if (attachmentMetadata) {
+          attachmentMetadata.mimetype = "application/x-mpegURL";
+          attachmentMetadata.hls_playlist_url = `/${BASE_UPLOAD_DIR}/${hlsPlaylistRelativePath.replace(/\\/g, "/")}`;
+          attachmentMetadata.is_hls_converted = true;
+
+          try {
+            const hlsProbedData = await getProbeData(hlsPlaylistAbsolutePath);
+            attachmentMetadata.duration =
+              hlsProbedData.format.duration || attachmentMetadata.duration;
+            attachmentMetadata.size =
+              hlsProbedData.format.size || attachmentMetadata.size;
+            attachmentMetadata.bit_rate =
+              hlsProbedData.format.bit_rate || attachmentMetadata.bit_rate;
+          } catch (hlsProbeErr) {
+            console.warn("FFprobe error on HLS playlist:", hlsProbeErr.message);
+          }
+        }
+
+        fs.unlink(originalFilePath, (err) => {
+          if (err) console.error("Error deleting original video file:", err);
+        });
+
+        res.status(200).json({
+          message: "Video uploaded and converted to HLS successfully",
+          url: attachmentMetadata
+            ? attachmentMetadata.hls_playlist_url
+            : `/${BASE_UPLOAD_DIR}/${hlsPlaylistRelativePath.replace(/\\/g, "/")}`,
+          attachment_metadata: attachmentMetadata,
+        });
+      } else {
+        const attachmentRelativeOutputDir = path.join(
+          "messages",
+          "attachment",
+          conversationId,
+        );
+        const attachmentAbsoluteOutputDir = path.join(
+          __dirname,
+          "..",
+          BASE_UPLOAD_DIR,
+          attachmentRelativeOutputDir,
+        );
+        const newAttachmentFileName = `${req.userId}-${generateRandomAlphaNumeric()}${path.extname(req.file.originalname)}`;
+        const newAttachmentAbsolutePath = path.join(
+          attachmentAbsoluteOutputDir,
+          newAttachmentFileName,
+        );
+
+        await fs.promises.mkdir(attachmentAbsoluteOutputDir, {
+          recursive: true,
+        });
+        await fs.promises.rename(originalFilePath, newAttachmentAbsolutePath);
+
+        const newAttachmentRelativePath = path.join(
+          attachmentRelativeOutputDir,
+          newAttachmentFileName,
+        );
+
+        if (attachmentMetadata) {
+          attachmentMetadata.mimetype = req.file.mimetype;
+          attachmentMetadata.is_hls_converted = false;
+        }
+
+        res.status(200).json({
+          message: "Attachment uploaded successfully",
+          url: `/${BASE_UPLOAD_DIR}/${newAttachmentRelativePath.replace(/\\/g, "/")}`,
+          attachment_metadata: attachmentMetadata,
+        });
+      }
+    } catch (error) {
+      console.error("Attachment upload/conversion error:", error);
+      res.status(500).json({ message: error.message });
     }
-  } catch (error) {
-    console.error('Attachment upload/conversion error:', error);
-    res.status(500).json({ message: error.message });
+  },
+);
+
+router.get("/rooms", authenticateAccess, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const convoUserIsIn = await Participant.findAll({
+      where: {
+        user_id: userId,
+      },
+      attributes: ["conversation_id"],
+    });
+    const conversations = convoUserIsIn.map((p) => p.conversation_id);
+
+    res.json(conversations);
+  } catch (err) {
+    res.status(500).json(err.message);
   }
 });
 
+router.get("/get/msgs/:convo_id", authenticateAccess, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const convo_id = req.params.convo_id;
 
+    const rawMsgs = await Message.findAll({
+      where: {
+        conversation_id: convo_id,
+      },
+      include: [
+        {
+          model: User,
+          as: "sender",
+          attributes: ["id", "username", "avatar"],
+        },
+      ],
+      order: [["sent_at", "ASC"]],
+    });
 
-router.get('/rooms', authenticateAccess ,async (req, res) => {
-   try {
-      const userId = req.userId
-      
-      const convoUserIsIn = await Participant.findAll({
-         where: {
-            user_id: userId,
-         },
-         attributes: ["conversation_id"]
-      })
-      const conversations = convoUserIsIn.map(p => p.conversation_id)
-      
-      res.json(conversations)
-   } catch(err) {
-      res.status(500).json(err.message)
-   }
-})
+    const read_statuses_for_convo = await ReadStatus.findAll({
+      where: {
+        conversation_id: convo_id,
+      },
+      attributes: ["read_at"],
+      include: [
+        {
+          model: Participant,
+          attributes: ["id"],
+          include: [
+            {
+              model: User,
+              as: "user", // <--- THIS IS THE FIX: Specify the 'as' alias here
+              attributes: ["id"],
+            },
+          ],
+        },
+      ],
+    });
 
-router.get('/get/msgs/:convo_id', authenticateAccess, async (req, res) => {
-   try {
-      const userId = req.userId
-      const convo_id = req.params.convo_id
+    const msgs = rawMsgs.map((msg) => {
+      const readers = [];
+      const messageSentAt = msg.sent_at;
 
-      const rawMsgs = await Message.findAll({
-         where: {
-            conversation_id: convo_id,
-         },
-         include: [{
-            model: User,
-            as: 'sender',
-            attributes: ['id', 'username', 'avatar']
-         }],
-         order: [['sent_at', 'ASC']]
-      })
+      read_statuses_for_convo.forEach((rs) => {
+        const participantReadAt = rs.read_at;
+        // Now, access the User through the 'user' alias:
+        const correspondingUserId =
+          rs.Participant && rs.Participant.user ? rs.Participant.user.id : null;
 
-      const read_statuses_for_convo = await ReadStatus.findAll({
-         where: {
-            conversation_id: convo_id
-         },
-         attributes: ["read_at"],
-         include: [{
-            model: Participant,
-            attributes: ['id'],
-            include: [{
-               model: User,
-               as: 'user', // <--- THIS IS THE FIX: Specify the 'as' alias here
-               attributes: ['id'],
-            }],
-         }],
-      })
+        if (
+          participantReadAt &&
+          correspondingUserId &&
+          participantReadAt >= messageSentAt
+        ) {
+          readers.push(correspondingUserId);
+        }
+      });
 
-      const msgs = rawMsgs.map(msg => {
-         const readers = [];
-         const messageSentAt = msg.sent_at;
+      return {
+        id: msg.id,
+        conversation_id: msg.conversation_id,
+        sender: msg.sender,
+        sender_id: msg.sender_id,
+        sender_type: msg.sender_type,
+        content: msg.content,
+        sent_at: msg.sent_at,
+        updated_at: msg.updated_at,
+        isMine: msg.sender_id === userId,
+        is_deleted: msg.is_deleted,
+        is_edited: msg.is_edited,
+        read_by: readers,
+      };
+    });
 
-         read_statuses_for_convo.forEach(rs => {
-            const participantReadAt = rs.read_at;
-            // Now, access the User through the 'user' alias:
-            const correspondingUserId = rs.Participant && rs.Participant.user ? rs.Participant.user.id : null;
+    res.json(msgs);
+  } catch (err) {
+    console.error("Error fetching messages:", err);
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
 
-            if (participantReadAt && correspondingUserId && participantReadAt >= messageSentAt) {
-               readers.push(correspondingUserId);
-            }
-         });
-
-         return {
-            id: msg.id,
-            conversation_id: msg.conversation_id,
-            sender: msg.sender,
-            sender_id: msg.sender_id,
-            sender_type: msg.sender_type,
-            content: msg.content,
-            sent_at: msg.sent_at,
-            updated_at: msg.updated_at,
-            isMine: msg.sender_id === userId,
-            is_deleted: msg.is_deleted,
-            is_edited: msg.is_edited,
-            read_by: readers,
-         }
-      })
-
-      res.json(msgs)
-
-   } catch(err) {
-      console.error("Error fetching messages:", err);
-      res.status(500).json({ error: err.message, stack: err.stack });
-   }
-})
-
-
-router.post('/read/msg/:convo_id/:msg_id/', authenticateAccess, async (req, res) => {
-   try {
-      const msgId = req.params.msg_id;
+router.post(
+  "/read/msg/:convo_id/:msg_id/",
+  authenticateAccess,
+  async (req, res) => {
+    try {
+      //const msgId = req.params.msg_id;
       const convoId = req.params.convo_id;
 
       const conversation = await Conversation.findByPk(convoId);
 
       if (!conversation) {
-         return res.status(404).json({ message: "Conversation not found" });
+        return res.status(404).json({ message: "Conversation not found" });
       }
 
       const participant = await Participant.findOne({
-         where: {
-            user_id: req.userId,
-            conversation_id: convoId
-         },
-         attributes: ["id"],
-         raw: true
+        where: {
+          user_id: req.userId,
+          conversation_id: convoId,
+        },
+        attributes: ["id"],
+        raw: true,
       });
 
       if (!participant) {
-         return res.status(404).json({ message: "Participant not found in this conversation" });
+        return res
+          .status(404)
+          .json({ message: "Participant not found in this conversation" });
       }
 
       const pId = participant.id;
 
       // 1. Find if a ReadStatus record already exists for this participant and conversation
       const existingReadStatus = await ReadStatus.findOne({
-         where: {
-            participant_id: pId,
-            conversation_id: convoId
-         }
+        where: {
+          participant_id: pId,
+          conversation_id: convoId,
+        },
       });
 
       // 2. If it exists, delete it
       if (existingReadStatus) {
-         await existingReadStatus.destroy();
+        await existingReadStatus.destroy();
       }
 
       // 3. Always create a new ReadStatus record
       const newReadStatus = await ReadStatus.create({
-         participant_id: pId,
-         conversation_id: convoId,
-         read_at: new Date(), // Set the current timestamp
-         // If you want to track the last message read when created:
-         // last_read_message_id: msgId,
+        participant_id: pId,
+        conversation_id: convoId,
+        read_at: new Date(), // Set the current timestamp
+        // If you want to track the last message read when created:
+        // last_read_message_id: msgId,
       });
 
       res.json(newReadStatus); // Return the newly created read status
-   } catch (e) {
+    } catch (e) {
       console.error("Error in read/msg route:", e); // Log the error for debugging
       res.status(500).json({ message: e.message });
-   }
-});
-
-
-
+    }
+  },
+);
 
 module.exports = router;

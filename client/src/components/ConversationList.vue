@@ -70,10 +70,11 @@
                 {{ formatTime(convo.last_message_at) }}
               </span>
               <span
+                v-if="convo.unreadCount > 0"
                 style="font-size: 10px; border-radius: 50px; background: green; color: white"
-                class="q-pa-xs"
+                class="q-pa-xs q-px-sm"
               >
-                10
+                {{ convo.unreadCount }}
               </span>
             </q-item-section>
           </q-card-section>
@@ -85,8 +86,9 @@
 
 <script setup>
 import { getAvatarSrc, formatTime } from 'src/composables/formater'
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, onUnmounted } from 'vue'
 import { api } from 'boot/axios'
+import { socket } from 'boot/socket'
 
 import { useMessageStore } from 'stores/messageStore'
 import { useMsgStore } from 'stores/messages'
@@ -131,7 +133,7 @@ async function fetchConversation() {
 
     try {
       const { data } = await api.get(`/api/get/all/user/conversations/${type}`)
-      //console.log(data)
+      console.log(data)
       myConversations.value = [...data]
     } catch (err) {
       console.log(err.message)
@@ -147,6 +149,12 @@ function selectConversation(convo_id, type) {
 
 onMounted(() => {
   fetchConversation()
+
+  socket.on('someone_raed_msg', fetchConversation)
+})
+
+onUnmounted(() => {
+  socket.off('someone_raed_msg', fetchConversation)
 })
 </script>
 

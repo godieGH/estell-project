@@ -19,29 +19,27 @@ const io = new Server(server, {
   },
 });
 
-
 app.use((req, res, next) => {
   req.io = io;
   next();
 });
 
-const { sendMessage } = require('./sockets/');
+const { sendMessage } = require("./sockets/");
 
 io.on("connection", (socket) => {
-  
-  socket.on('create_room', payload => {
-     payload.forEach(id => {
-      socket.join(id)
-      console.log(`socket with id ${socket.id} joined room ${id}`)
-     })
-  })
-  
-  socket.on('read_msg', ({msgId, convoId}) => {
-     socket.to(convoId).emit('someone_raed_msg', msgId)
-  })
-  
-  sendMessage(io, socket)
-  
+  socket.on("create_room", (payload) => {
+    payload.forEach((id) => {
+      socket.join(id);
+      console.log(`socket with id ${socket.id} joined room ${id}`);
+    });
+  });
+
+  socket.on("read_msg", ({ msgId, convoId }) => {
+    io.to(convoId).emit("someone_raed_msg", msgId);
+  });
+
+  sendMessage(io, socket);
+
   console.log(`A user connected with socket ID: ${socket.id}`);
   socket.on("disconnect", () => {
     console.log(`User with socket ID: ${socket.id} disconnected`);
@@ -81,10 +79,7 @@ app.use(
         defaultSrc: ["'self'"],
         mediaSrc: ["'self'", "blob:"],
         workerSrc: ["'self'", "blob:"],
-        scriptSrc: [
-          "'self'",
-          "'unsafe-eval'",
-        ],
+        scriptSrc: ["'self'", "'unsafe-eval'"],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'", "ws:", "wss:"],
       },
@@ -103,7 +98,6 @@ app.use("/people", express.static("public"));
 app.use("/profile", express.static("public"));
 
 app.use("/uploads", express.static("uploads"));
-
 
 app.use("/users", require("./routes/users"));
 app.use("/users", require("./routes/people"));

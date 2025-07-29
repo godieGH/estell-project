@@ -8,8 +8,8 @@ let socket = null
 
 export default boot(({ app }) => {
   // Retrieve the Socket.IO URL from your environment variables
-  const SOCKET_URL = "/"
-  
+  const SOCKET_URL = '/'
+
   //console.log(SOCKET_URL)
   // Initialize the socket connection
   socket = io(SOCKET_URL, {

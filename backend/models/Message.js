@@ -62,7 +62,7 @@ Message.init(
     updated_at: {
       type: DataTypes.DATE(3), // <--- And this for updated_at if you track edits precisely
       allowNull: false,
-    }
+    },
   },
   {
     sequelize,

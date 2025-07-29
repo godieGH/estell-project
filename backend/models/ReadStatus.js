@@ -22,7 +22,7 @@ ReadStatus.init(
         key: "id",
       },
     },
-   read_at: {
+    read_at: {
       type: DataTypes.DATE(3), // <--- Add (3) for milliseconds (maps to updatedAt)
       allowNull: false, // Assuming it should always be updated on read
       defaultValue: DataTypes.NOW, // Good to have a default for initial read/creation

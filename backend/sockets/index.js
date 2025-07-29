@@ -1,5 +1,5 @@
-const sendMessage = require('./sendMessage')
+const sendMessage = require("./sendMessage");
 
 module.exports = {
-   sendMessage,
-}
+  sendMessage,
+};
