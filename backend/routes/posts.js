@@ -30,7 +30,7 @@ router.get("/mentioned/user/:id", authenticateAccess, getMentionedUser);
 
 const fs = require("fs");
 const path = require("path");
-const { imageSize } = require('image-size')
+const { imageSize } = require("image-size");
 const ffmpeg = require("fluent-ffmpeg");
 
 const FFMPEG_PATH = process.env.FFMPEG_PATH;
@@ -55,13 +55,17 @@ const getVideoMetadata = (filePath) => {
         return reject(err);
       }
 
-      const videoStream = metadata.streams.find((s) => s.codec_type === "video");
-      const audioStream = metadata.streams.find((s) => s.codec_type === "audio");
+      const videoStream = metadata.streams.find(
+        (s) => s.codec_type === "video",
+      );
+      const audioStream = metadata.streams.find(
+        (s) => s.codec_type === "audio",
+      );
       const format = metadata.format;
 
       const getFps = (rFrameRate) => {
         if (!rFrameRate) return null;
-        const parts = rFrameRate.split('/');
+        const parts = rFrameRate.split("/");
         if (parts.length === 2) {
           const numerator = parseInt(parts[0], 10);
           const denominator = parseInt(parts[1], 10);
@@ -80,7 +84,9 @@ const getVideoMetadata = (filePath) => {
         format_long_name: format.format_long_name || null,
         width: videoStream ? videoStream.width : null,
         height: videoStream ? videoStream.height : null,
-        resolution: videoStream ? `${videoStream.width}x${videoStream.height}` : null,
+        resolution: videoStream
+          ? `${videoStream.width}x${videoStream.height}`
+          : null,
         aspect_ratio: videoStream ? videoStream.display_aspect_ratio : null,
         fps: getFps(videoStream?.r_frame_rate),
         video_codec: videoStream ? videoStream.codec_name : null,
@@ -101,14 +107,16 @@ const getImageMetadata = async (filePath) => {
     };
     return meta;
   } catch (error) {
-    console.error("Error getting image metadata with image-size:", error.message);
+    console.error(
+      "Error getting image metadata with image-size:",
+      error.message,
+    );
     return {
       size: fs.existsSync(filePath) ? fs.statSync(filePath).size : null,
-      error: "Failed to get image dimensions or metadata."
+      error: "Failed to get image dimensions or metadata.",
     };
   }
 };
-
 
 router.post(
   "/upload/",
@@ -198,9 +206,9 @@ router.post(
                 io.to(socketId).emit("hls_progress", { percent });
               }
             })
-              // eslint-disable-next-line no-unused-vars
+            // eslint-disable-next-line no-unused-vars
             .on("error", (err, stdout, stderr) => {
-              console.error("FFmpeg HLS processing error:", err.message); 
+              console.error("FFmpeg HLS processing error:", err.message);
               deleteFile(inputFilePath);
               if (hlsOutputDir && fs.existsSync(hlsOutputDir)) {
                 fs.rm(hlsOutputDir, { recursive: true, force: true }, () => {});
@@ -221,12 +229,15 @@ router.post(
                       resolveThumb();
                     })
                     .on("error", (err) => {
-                      console.error("FFmpeg thumbnail error:", err.message); 
-                      resolveThumb(); 
+                      console.error("FFmpeg thumbnail error:", err.message);
+                      resolveThumb();
                     });
                 });
               } catch (thumbErr) {
-                console.error("Thumbnail generation error caught in promise.", thumbErr.message); // Improved console.error
+                console.error(
+                  "Thumbnail generation error caught in promise.",
+                  thumbErr.message,
+                ); // Improved console.error
               }
 
               processedMediaUrl = `/uploads/hls/${videoId}/${masterPlaylistFileName}`;
@@ -258,9 +269,12 @@ router.post(
                         originalMediaUrl = `/uploads/hls/${videoId}/${mp4FileName}`;
                         resolveMp4();
                       })
-                        // eslint-disable-next-line no-unused-vars
+                      // eslint-disable-next-line no-unused-vars
                       .on("error", (err, stdout, stderr) => {
-                        console.error("FFmpeg MP4 optimization error:", err.message); 
+                        console.error(
+                          "FFmpeg MP4 optimization error:",
+                          err.message,
+                        );
                         originalMediaUrl = `/uploads/hls/${videoId}/segment000.ts`;
                         resolveMp4();
                       })
@@ -274,7 +288,10 @@ router.post(
                   });
                 }
               } catch (mp4Err) {
-                console.error("MP4 optimization promise error:", mp4Err.message); // Added console.error
+                console.error(
+                  "MP4 optimization promise error:",
+                  mp4Err.message,
+                ); // Added console.error
                 originalMediaUrl = `/uploads/hls/${videoId}/segment000.ts`;
               }
 
@@ -324,7 +341,6 @@ router.post(
     }
   },
 );
-
 
 router.post("/create/", authenticateAccess, createAPostController);
 

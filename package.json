@@ -5,7 +5,7 @@
   "scripts": {
     "start": "npm run dev",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "concurrently --names \"backend,client\" \"npm run dev --prefix backend\" \"npm run dev --prefix client\"",
+    "dev": "concurrently --names \"backend,client\" \"npm start --prefix backend\" \"npm run dev --prefix client\"",
     "start-backend": "npm start --prefix backend",
     "start-client": "npm run dev --prefix client",
     "build-client": "npm build --prefix client",

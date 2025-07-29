@@ -49,7 +49,7 @@ Conversation.init(
     updated_at: {
       type: DataTypes.DATE(3), // <--- Add (3) for milliseconds
       allowNull: false,
-    }
+    },
   },
   {
     sequelize,

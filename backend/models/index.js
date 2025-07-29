@@ -191,7 +191,6 @@ ReadStatus.belongsTo(Conversation, {
   foreignKey: "conversation_id",
 });
 
-
 module.exports = {
   sequelize,
   User,

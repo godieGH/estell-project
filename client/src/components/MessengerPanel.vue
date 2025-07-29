@@ -124,9 +124,9 @@
                 <q-item-label>
                   <q-skeleton type="text" width="80px" />
                 </q-item-label>
-                <q-item-label caption/>
-                  <q-skeleton type="text" width="120px" />
-                </q-item-section>
+                <q-item-label caption />
+                <q-skeleton type="text" width="120px" />
+              </q-item-section>
               <q-item-section side>
                 <q-btn
                   v-if="modalTitle === 'Create Group Chat'"

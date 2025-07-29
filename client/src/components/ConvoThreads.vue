@@ -12,8 +12,11 @@
       v-slot="{ item: message }"
       virtual-scroll-item-size="35"
     >
-       
-       <div :ref="message.addObserverRef?'readbyRef':null" :key="message.id" :data-message-id="message.id">
+      <div
+        :ref="message.notReadByMe && !message.isMine ? 'notReadbyMeRef' : null"
+        :key="message.id"
+        :data-message-id="message.id"
+      >
         <div
           v-if="message.type === 'date_separator'"
           class="message-system text-center text-caption text-grey-6"
@@ -72,13 +75,13 @@
             <div
               v-if="message.content.attachment_type === 'image'"
               style="position: relative"
-              :style="{ 'width': '220px', 'height': `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width} )` }"
+              :style="{
+                width: '220px',
+                height: `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width} )`,
+              }"
               class="attachment-top"
             >
-              <div
-                v-if="message.queued && message.isMine"
-                class="attachment-queued-overlay"
-              >
+              <div v-if="message.queued && message.isMine" class="attachment-queued-overlay">
                 <q-btn flat size="30px" style="color: white" loading></q-btn>
               </div>
               <q-img :src="message.content.attachment" class="message-image" />
@@ -87,19 +90,22 @@
             <div
               v-if="message.content.attachment_type === 'video'"
               style="position: relative"
-              :style="{ 'width': '220px', 'height': `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width})` }"
+              :style="{
+                width: '220px',
+                height: `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width})`,
+              }"
               class="attachment-top"
             >
-              <div
-                v-if="message.queued && message.isMine"
-                class="attachment-queued-overlay"
-              >
+              <div v-if="message.queued && message.isMine" class="attachment-queued-overlay">
                 <q-btn flat size="30px" style="color: white" loading></q-btn>
               </div>
               <CustomVideoPlayer :src="message.content.attachment" />
             </div>
 
-            <div v-if="message.content.attachment_type === 'file'" class="file-type-attachment attachment-top">
+            <div
+              v-if="message.content.attachment_type === 'file'"
+              class="file-type-attachment attachment-top"
+            >
               <div class="file-icon">
                 <q-icon
                   :name="getIconForFileType(message.content.attachment_metadata)"
@@ -136,9 +142,9 @@
                       message.content.attachment_metadata?.type === 'application'
                         ? message.content.attachment_metadata?.subtype
                         : message.content.attachment_metadata?.type === 'video' ||
-                          message.content.attachment_metadata?.type === 'image' ||
-                          message.content.attachment_metadata?.type === 'audio' ||
-                          message.content.attachment_metadata?.type === 'text'
+                            message.content.attachment_metadata?.type === 'image' ||
+                            message.content.attachment_metadata?.type === 'audio' ||
+                            message.content.attachment_metadata?.type === 'text'
                           ? message.content.attachment_metadata?.mime_type.split('/')[1]
                           : ''
                     }}
@@ -151,14 +157,20 @@
                 </span>
                 <span v-else-if="!message.isMine">
                   <template v-if="downloadingMessageId === message.id">
-                    <video src="~assets/download-anim.mp4" autoplay loop style="width: 28px;" />
+                    <video src="~assets/download-anim.mp4" autoplay loop style="width: 28px" />
                   </template>
                   <template v-else>
                     <q-icon
                       name="file_download"
-                      style="font-size: 20px; cursor: pointer;"
+                      style="font-size: 20px; cursor: pointer"
                       class="icons"
-                      @click="downloadFile(message.id, message.content.attachment, message.content.attachment?.split('/').pop())"
+                      @click="
+                        downloadFile(
+                          message.id,
+                          message.content.attachment,
+                          message.content.attachment?.split('/').pop(),
+                        )
+                      "
                     />
                   </template>
                 </span>
@@ -167,8 +179,6 @@
                 </span>
               </div>
             </div>
-
-
 
             <div v-if="message.content.voice_note" class="attachment-top">
               <div class="voice-note-player row items-center no-wrap q-gutter-xs">
@@ -209,11 +219,15 @@
               </div>
             </div>
 
-            <div v-if="message.content.text" :class="{ 'text-grey': message.is_deleted }" class="message-text-content">
+            <div
+              v-if="message.content.text"
+              :class="{ 'text-grey': message.is_deleted }"
+              class="message-text-content"
+            >
               <span v-if="message.is_deleted && !message.isMine">
                 <span class="material-icons">do_not_disturb</span> This message was deleted.
               </span>
-              <span style="white-space: pre-wrap;" v-else>
+              <span style="white-space: pre-wrap" v-else>
                 {{ message.content.text }}
               </span>
             </div>
@@ -232,7 +246,11 @@
               >
               <span
                 v-if="
-                  message.isMine && !message.queued && message.read_by && message.read_by.length > 0
+                  message.isMine &&
+                  !message.queued &&
+                  message.read_by &&
+                  message.read_by.length > 0 &&
+                  checkReadBy(message.read_by)
                 "
                 class="text-blue q-pr-xs material-icons"
                 style="font-size: 14px"
@@ -252,31 +270,49 @@
     </q-virtual-scroll>
   </div>
 </template>
-
 <script setup>
 import CustomVideoPlayer from 'components/VideoPlayer.vue'
 import { ref, computed, onUnmounted, watch, onMounted, nextTick } from 'vue'
-import { socket } from "boot/socket"
-import { api } from "boot/axios"
+import { socket } from 'boot/socket'
+import { api } from 'boot/axios'
 import { date, useQuasar } from 'quasar'
 import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
+import { useMsgStore } from 'stores/messages'
 import { formatFileSize, getAvatarSrc } from 'src/composables/formater'
 
 const messageStore = useMessageStore()
+const imbMsg = useMsgStore()
 const props = defineProps({
   currentConversation: Object,
 })
 const userStore = useUserStore()
 const $q = useQuasar()
 
+const notReadbyMeRef = ref(null)
+let observer
+
 const messages = ref([])
+
+function checkReadBy(readByArray) {
+  if (readByArray.length === 0) {
+    return false
+  }
+
+  for (let i = 0; i < readByArray.length; i++) {
+    if (readByArray[i] !== userStore.user.id) {
+      return true
+    }
+  }
+
+  return false
+}
 
 async function fetchHistMsg() {
   try {
     const { data } = await api.get(`/api/get/msgs/${props.currentConversation.id}/`)
     messages.value = [...data]
-    console.log(data)
+    //console.log(data)
   } catch (err) {
     console.error(err.message)
   }
@@ -287,7 +323,7 @@ watch(
   (newMsgs) => {
     //console.log(newMsgs)
     if (newMsgs.length > 0) {
-      const queuedMsgs = messageStore.queued.filter(msg => {
+      const queuedMsgs = messageStore.queued.filter((msg) => {
         return msg.conversation_id === props.currentConversation.id
       })
       messages.value = [...new Set([...messages.value, ...queuedMsgs])]
@@ -296,12 +332,12 @@ watch(
   { deep: true },
 )
 
-
 onMounted(async () => {
+  imbMsg.initializeStore()
   await fetchHistMsg()
 
   if (messageStore.queued.length > 0) {
-    const queuedMsgs = messageStore.queued.filter(msg => {
+    const queuedMsgs = messageStore.queued.filter((msg) => {
       return msg.conversation_id === props.currentConversation.id
     })
 
@@ -309,18 +345,42 @@ onMounted(async () => {
     messages.value = [...new Set([...messages.value, ...queuedMsgs])]
   }
 
+  socket.on('new_msg', recieveNew)
+  socket.on('someone_raed_msg', someone_raed_msg)
 
-  socket.on('new_msg', recieveNew);
+  observer = new IntersectionObserver(
+    async ([entry]) => {
+      if (entry.isIntersecting && entry.target.dataset.messageId) {
+        const readMsgIndex = messages.value.findIndex(
+          (msg) => msg.id === entry.target.dataset.messageId,
+        )
+        const readMsg = messages.value.find((msg) => msg.id === entry.target.dataset.messageId)
+        if (Number.isInteger(readMsgIndex)) {
+          //messages.value[readMsg].read_by.push(userStore.user.id)
+          try {
+            await api.post(
+              `/api/read/msg/${messages.value[readMsgIndex].conversation_id}/${entry.target.dataset.messageId}/`,
+            )
+            socket.emit('read_msg', { msgId: readMsg.id, convoId: readMsg.conversation_id })
+            observer.unobserve(entry.target)
+          } catch (e) {
+            console.error(e.message)
+          }
+        }
+      }
+    },
+    {
+      threshold: 0.9,
+    },
+  )
 })
 
-
-async function recieveNew(msg) { // Use 'async' because we'll await inside
-  if (msg.conversation_id !== props.currentConversation.id) return;
+async function recieveNew(msg) {
+  if (msg.conversation_id !== props.currentConversation.id) return
 
   const newMsg = {
     id: msg.id,
     conversation_id: msg.conversation_id,
-    // sender will be populated after the API call
     sender_id: msg.sender_id,
     sender_type: msg.sender_type,
     content: msg.content,
@@ -329,27 +389,28 @@ async function recieveNew(msg) { // Use 'async' because we'll await inside
     isMine: msg.sender_id === userStore.user.id,
     is_deleted: msg.is_deleted,
     is_edited: msg.is_edited,
-  };
-
-  try {
-    // Fetch sender details only if it's a user message
-    if (msg.sender_type === 'user') {
-      const senderResponse = await api.get(`/api/get/user/${msg.sender_id}`);
-      newMsg.sender = senderResponse.data; // Assuming your API returns data in .data
-    }
-  } catch (error) {
-    console.error('Error fetching sender details:', error);
-    newMsg.sender = null; // Or some default error state
   }
 
-  // If it's a system message with content.type === "initial_msg", push to the beginning
+  try {
+    if (msg.sender_type === 'user') {
+      const senderResponse = await api.get(`/api/get/user/${msg.sender_id}`)
+      newMsg.sender = senderResponse.data // Assuming your API returns data in .data
+    }
+  } catch (error) {
+    console.error('Error fetching sender details:', error)
+    newMsg.sender = null
+  }
+
   if (newMsg.sender_type === 'system' && newMsg.content && newMsg.content.type === 'initial_msg') {
-    messages.value.unshift(newMsg);
+    messages.value.unshift(newMsg)
   } else {
-    messages.value.push(newMsg);
+    messages.value.push(newMsg)
   }
 }
 
+function someone_raed_msg() {
+  fetchHistMsg()
+}
 
 const virtualScroll = ref(null)
 const chatContainer = ref(null)
@@ -485,52 +546,66 @@ onUnmounted(() => {
     currentAudio.value.pause()
     currentAudio.value = null
   }
-  socket.off('new_msg', recieveNew);
+  socket.off('new_msg', recieveNew)
+  socket.off('someone_raed_msg', someone_raed_msg)
+  if (observer) {
+    // Make sure observer is defined before disconnecting
+    observer.disconnect()
+  }
 })
 
 const groupedMessages = computed(() => {
   if (!messages.value || messages.value.length === 0) {
-    return [];
+    return []
   }
 
-  const processed = [];
-  let lastDate = null; // To keep track of the last message's date
-
-  // Sort messages to ensure they are in chronological order before processing
-  const sortedMessages = [...messages.value].sort((a, b) => new Date(a.sent_at) - new Date(b.sent_at));
+  const processed = []
+  let lastDate = null
+  const sortedMessages = [...messages.value].sort(
+    (a, b) => new Date(a.sent_at) - new Date(b.sent_at),
+  )
 
   for (let i = 0; i < sortedMessages.length; i++) {
-    const currentMessage = { ...sortedMessages[i] }; // Create a copy
+    const currentMessage = { ...sortedMessages[i] }
 
-    // 1. Add Date Separator if needed
-    const currentMessageDate = date.formatDate(currentMessage.sent_at, 'YYYY-MM-DD');
+    const currentMessageDate = date.formatDate(currentMessage.sent_at, 'YYYY-MM-DD')
     if (currentMessageDate !== lastDate) {
       processed.push({
         id: `separator-${currentMessageDate}`, // Unique ID for the separator
         type: 'date_separator',
         date: currentMessage.sent_at,
-      });
-      lastDate = currentMessageDate;
+      })
+      lastDate = currentMessageDate
     }
 
-    // 2. Add Avatar visibility logic
     if (currentMessage.sender_type === 'user') {
-      let showAvatar = false;
-      const previousMessage = i > 0 ? sortedMessages[i - 1] : null;
+      let showAvatar = false
+      const previousMessage = i > 0 ? sortedMessages[i - 1] : null
 
-      // Show avatar if it's the first message, or if the sender is different from the previous one.
-      // Also ensure avatar shows if the previous message was a system message.
-      if (!previousMessage || currentMessage.sender_id !== previousMessage.sender_id || previousMessage.sender_type === 'system') {
-        showAvatar = true;
+      if (
+        !previousMessage ||
+        currentMessage.sender_id !== previousMessage.sender_id ||
+        previousMessage.sender_type === 'system'
+      ) {
+        showAvatar = true
       }
-      currentMessage.showAvatar = showAvatar;
+      currentMessage.showAvatar = showAvatar
     }
 
-    processed.push(currentMessage);
+    currentMessage.isMine = currentMessage.sender_id === userStore.user.id
+
+    if (!currentMessage.isMine) {
+      currentMessage.notReadByMe =
+        !currentMessage.read_by || !currentMessage.read_by.includes(userStore.user.id)
+    } else {
+      currentMessage.notReadByMe = false // Messages sent by the user are considered read by them.
+    }
+
+    processed.push(currentMessage)
   }
 
-  return processed;
-});
+  return processed
+})
 
 const scrollToBottom = () => {
   if (virtualScroll.value && groupedMessages.value.length > 0) {
@@ -557,80 +632,72 @@ onMounted(() => {
 
 const getIconForFileType = (metadata) => {
   if (!metadata) {
-    return 'far fa-file';
+    return 'far fa-file'
   }
 
-  const {
-    type,
-    subtype,
-    mime_type
-  } = metadata;
+  const { type, subtype, mime_type } = metadata
 
   switch (type) {
     case 'image':
-      return 'fas fa-file-image';
+      return 'fas fa-file-image'
     case 'video':
-      return 'fas fa-file-video';
+      return 'fas fa-file-video'
     case 'audio':
-      return 'fas fa-file-audio';
+      return 'fas fa-file-audio'
     case 'document':
     case 'application':
       if (subtype === 'pdf' || mime_type === 'application/pdf') {
-        return 'fas fa-file-pdf';
+        return 'fas fa-file-pdf'
       } else if (
         subtype === 'word' ||
         mime_type === 'application/msword' ||
         mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       ) {
-        return 'fas fa-file-word';
+        return 'fas fa-file-word'
       } else if (
         subtype === 'excel' ||
         mime_type === 'application/vnd.ms-excel' ||
         mime_type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       ) {
-        return 'fas fa-file-excel';
+        return 'fas fa-file-excel'
       } else if (
         subtype === 'powerpoint' ||
         mime_type === 'application/vnd.ms-powerpoint' ||
         mime_type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
       ) {
-        return 'fas fa-file-powerpoint';
+        return 'fas fa-file-powerpoint'
       } else if (
         subtype === 'zip' ||
         mime_type === 'application/zip' ||
         mime_type === 'application/x-zip-compressed'
       ) {
-        return 'fas fa-file-archive';
+        return 'fas fa-file-archive'
       } else if (mime_type === 'text/csv') {
-        return 'fas fa-file-csv';
+        return 'fas fa-file-csv'
       }
-      return 'fas fa-file-alt';
+      return 'fas fa-file-alt'
     case 'text':
       if (mime_type === 'text/plain') {
-        return 'fas fa-file-alt';
+        return 'fas fa-file-alt'
       } else if (mime_type === 'text/html') {
-        return 'fas fa-file-code';
+        return 'fas fa-file-code'
       } else if (mime_type === 'text/css') {
-        return 'fas fa-file-code';
+        return 'fas fa-file-code'
       } else if (mime_type === 'text/javascript') {
-        return 'fas fa-file-code';
+        return 'fas fa-file-code'
       }
-      return 'fas fa-file-alt';
+      return 'fas fa-file-alt'
     default:
-      return 'far fa-file';
+      return 'far fa-file'
   }
-};
+}
 
 const getIconColorForFileType = (metadata) => {
   if (!metadata) {
-    return '#808080';
+    return '#808080'
   }
 
-  const {
-    type,
-    subtype,
-    mime_type
-  } = metadata;
+  const { type, subtype, mime_type } = metadata
 
   const colorMap = {
     pdf: '#E4002B',
@@ -646,77 +713,89 @@ const getIconColorForFileType = (metadata) => {
     css: '#1572B6',
     javascript: '#F7DF1E',
     text: '#808080',
-  };
+  }
 
   if (subtype && colorMap[subtype]) {
-    return colorMap[subtype];
+    return colorMap[subtype]
   }
   if (mime_type && mime_type.includes('pdf') && colorMap['pdf']) {
-    return colorMap['pdf'];
+    return colorMap['pdf']
   }
   if (mime_type && mime_type.includes('wordprocessingml') && colorMap['word']) {
-    return colorMap['word'];
+    return colorMap['word']
   }
   if (mime_type && mime_type.includes('spreadsheetml') && colorMap['excel']) {
-    return colorMap['excel'];
+    return colorMap['excel']
   }
   if (mime_type && mime_type.includes('presentationml') && colorMap['powerpoint']) {
-    return colorMap['powerpoint'];
+    return colorMap['powerpoint']
   }
   if (mime_type && mime_type.includes('zip') && colorMap['zip']) {
-    return colorMap['zip'];
+    return colorMap['zip']
   }
   if (mime_type && mime_type.includes('csv') && colorMap['csv']) {
-    return colorMap['csv'];
+    return colorMap['csv']
   }
   if (mime_type && mime_type.includes('html') && colorMap['html']) {
-    return colorMap['html'];
+    return colorMap['html']
   }
   if (mime_type && mime_type.includes('css') && colorMap['css']) {
-    return colorMap['css'];
+    return colorMap['css']
   }
   if (mime_type && mime_type.includes('javascript') && colorMap['javascript']) {
-    return colorMap['javascript'];
+    return colorMap['javascript']
   }
 
   if (type && colorMap[type]) {
-    return colorMap[type];
+    return colorMap[type]
   }
 
-  return '#808080';
-};
+  return '#808080'
+}
 
-const downloadingMessageId = ref(null);
+const downloadingMessageId = ref(null)
 
 const downloadFile = async (messageId, fileUrl, fileName) => {
-  downloadingMessageId.value = messageId;
+  downloadingMessageId.value = messageId
 
   try {
-    const response = await fetch(fileUrl);
+    const response = await fetch(fileUrl)
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = fileName || 'download';
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = url
+    a.download = fileName || 'download'
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
 
-    downloadingMessageId.value = null;
+    downloadingMessageId.value = null
   } catch (error) {
-    console.error('Error during file download:', error);
-    $q.notify({message: `Error during file download: ${error.message}`});
-    downloadingMessageId.value = null;
+    console.error('Error during file download:', error)
+    $q.notify({ message: `Error during file download: ${error.message}` })
+    downloadingMessageId.value = null
   }
-};
+}
 
-
-
+watch(
+  notReadbyMeRef,
+  (newValue, oldValue) => {
+    if (newValue && observer) {
+      if (oldValue && oldValue !== newValue) {
+        observer.unobserve(oldValue)
+      }
+      observer.observe(newValue)
+    } else if (!newValue && oldValue && observer) {
+      observer.unobserve(oldValue)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped lang="scss">
@@ -785,7 +864,6 @@ const downloadFile = async (messageId, fileUrl, fileName) => {
   margin-top: 0px; /* Adjust as needed for spacing after text/attachments */
 }
 
-
 /* Message attachments (images) */
 .message-image {
   max-width: 100%;
@@ -816,7 +894,6 @@ const downloadFile = async (messageId, fileUrl, fileName) => {
   height: 100%;
   border-radius: 10px;
 }
-
 
 /* Reply Bubble Styles */
 .reply-bubble {
@@ -887,7 +964,6 @@ const downloadFile = async (messageId, fileUrl, fileName) => {
   border-radius: 10px;
   /* margin-bottom: 5px; Removed due to flex gap */
 
-
   .file-icon {
     padding: 0 10px 0 0;
   }
@@ -928,6 +1004,3 @@ const downloadFile = async (messageId, fileUrl, fileName) => {
   }
 }
 </style>
-
-
-

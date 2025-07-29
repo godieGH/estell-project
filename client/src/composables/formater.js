@@ -70,4 +70,3 @@ export function formatFileSize(sizeInByte) {
 
   return `${formattedWithoutTrailingZeros} ${units[i]}`
 }
-

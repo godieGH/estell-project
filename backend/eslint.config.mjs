@@ -5,7 +5,7 @@ import { defineConfig } from "eslint/config";
 export default defineConfig([
   // Global ignores for all configurations
   {
-    ignores: ["public/", "uploads/"],
+    ignores: ["public/", "uploads/", "migrations/", "seeders/"],
   },
   {
     files: ["**/*.{js,mjs,cjs}"],

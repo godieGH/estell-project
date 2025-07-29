@@ -25,77 +25,93 @@
       </div>
     </div>
     <div class="conversation-list-content-area">
-    <div v-if="initialLoading">
-      </div>
-    <div v-else>
-      <q-card
-        v-for="convo in myConversations"
-        :key="convo.id"
-        flat
-        class="q-mb-sm q-hoverable"
-        style="cursor: pointer"
-        @click="selectConversation(convo.id, convo.type)"
-      >
-        <q-card-section v-if="convo.participants.length > 0" class="row items-center no-wrap q-py-sm">
-          <q-item-section avatar>
-            <q-avatar size="48px">
-              <img :src="getAvatarSrc(convo.participants?.[0]?.user?.avatar)" />
-            </q-avatar>
-          </q-item-section>
+      <div v-if="initialLoading"></div>
+      <div v-else>
+        <q-card
+          v-for="convo in myConversations"
+          :key="convo.id"
+          flat
+          class="q-mb-sm q-hoverable"
+          style="cursor: pointer"
+          @click="selectConversation(convo.id, convo.type)"
+        >
+          <q-card-section
+            v-if="convo.participants.length > 0"
+            class="row items-center no-wrap q-py-sm"
+          >
+            <q-item-section avatar>
+              <q-avatar size="48px">
+                <img :src="getAvatarSrc(convo.participants?.[0]?.user?.avatar)" />
+              </q-avatar>
+            </q-item-section>
 
-          <q-item-section>
-            <q-item-label>
-              <span class="text-grey" style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis;">
-                {{ convo.participants?.[0]?.user?.name || 'Unknown User' }}
+            <q-item-section>
+              <q-item-label>
+                <span
+                  class="text-grey"
+                  style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis"
+                >
+                  {{ convo.participants?.[0]?.user?.name || 'Unknown User' }}
+                </span>
+              </q-item-label>
+              <q-item-label class="q-mt-xs">
+                <div
+                  v-if="convo.messages.length > 0"
+                  style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis"
+                >
+                  {{ convo.messages?.[0]?.content?.text }}
+                </div>
+                <div v-else class="text-grey">👋 Hi there...</div>
+              </q-item-label>
+            </q-item-section>
+
+            <q-item-section side top>
+              <span style="font-size: 10px" class="q-mb-xs">
+                {{ formatTime(convo.last_message_at) }}
               </span>
-            </q-item-label>
-            <q-item-label class="q-mt-xs">
-              <div v-if="convo.messages.length > 0" style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis;">
-                {{ convo.messages?.[0]?.content?.text }}
-                
-              </div>
-              <div v-else class="text-grey">👋 Hi there...</div>
-            </q-item-label>
-          </q-item-section>
-                
-          <q-item-section side top>
-            <span style="font-size: 10px" class="q-mb-xs">
-              {{ formatTime(convo.last_message_at) }}
-            </span>
-            <span style="font-size: 10px; border-radius: 50px; background: green; color: white" class="q-pa-xs">
-              10
-            </span>
-          </q-item-section>
-        </q-card-section>
-      </q-card>
+              <span
+                v-if="convo.unreadCount > 0"
+                style="font-size: 10px; border-radius: 50px; background: green; color: white"
+                class="q-pa-xs q-px-sm"
+              >
+                {{ convo.unreadCount }}
+              </span>
+            </q-item-section>
+          </q-card-section>
+        </q-card>
+      </div>
     </div>
-  </div>
   </div>
 </template>
 
 <script setup>
 import { getAvatarSrc, formatTime } from 'src/composables/formater'
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, onUnmounted } from 'vue'
 import { api } from 'boot/axios'
+import { socket } from 'boot/socket'
 
 import { useMessageStore } from 'stores/messageStore'
-import { useMsgStore } from "stores/messages"
+import { useMsgStore } from 'stores/messages'
 
 const emit = defineEmits(['selectConversation'])
 const IMB = useMsgStore()
 const messageStore = useMessageStore()
 
-watch(IMB.messages, (newmsg) => {
-   void newmsg
-   fetchConversation()
-}, {
-   deep: true,
-})
+watch(
+  IMB.messages,
+  (newmsg) => {
+    void newmsg
+    fetchConversation()
+  },
+  {
+    deep: true,
+  },
+)
 watch(
   messageStore.queued,
   (newMsgs) => {
-     void newMsgs
-     fetchConversation()
+    void newMsgs
+    fetchConversation()
   },
   { deep: true },
 )
@@ -117,7 +133,7 @@ async function fetchConversation() {
 
     try {
       const { data } = await api.get(`/api/get/all/user/conversations/${type}`)
-      //console.log(data)
+      console.log(data)
       myConversations.value = [...data]
     } catch (err) {
       console.log(err.message)
@@ -133,6 +149,12 @@ function selectConversation(convo_id, type) {
 
 onMounted(() => {
   fetchConversation()
+
+  socket.on('someone_raed_msg', fetchConversation)
+})
+
+onUnmounted(() => {
+  socket.off('someone_raed_msg', fetchConversation)
 })
 </script>
 
