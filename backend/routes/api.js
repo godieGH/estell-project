@@ -26,12 +26,10 @@ router.get("/", async (req, res) => {
     res.status(200).json({ status: "ok", message: "Service is ready" });
   } catch (err) {
     console.error("Database connection failed:", err);
-    res
-      .status(503)
-      .json({
-        status: "error",
-        message: "Service not available. Database connection failed.",
-      });
+    res.status(503).json({
+      status: "error",
+      message: "Service not available. Database connection failed.",
+    });
   }
 });
 
@@ -666,12 +664,10 @@ router.delete("/post/:id/delete", authenticateAccess, async (req, res) => {
   }
 });
 
-
 /**
  * This is where DM logic start
  *
  */
-
 
 router.get("/all/people/to/dm", authenticateAccess, async (req, res) => {
   try {
@@ -844,7 +840,7 @@ router.get(
         );
         
         */
-        
+
         // 3. For each conversation, find the other participant
         const allOtherParticipants = await Participant.findAll({
           where: {

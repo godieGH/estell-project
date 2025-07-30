@@ -70,3 +70,25 @@ export function formatFileSize(sizeInByte) {
 
   return `${formattedWithoutTrailingZeros} ${units[i]}`
 }
+
+export async function audioDuration(src) {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio()
+    audio.src = src
+
+    audio.onloadedmetadata = () => {
+      const durationInSeconds = audio.duration
+      const minutes = Math.floor(durationInSeconds / 60)
+      const seconds = Math.floor(durationInSeconds % 60)
+
+      const formattedMinutes = String(minutes).padStart(2, '0')
+      const formattedSeconds = String(seconds).padStart(2, '0')
+
+      resolve(`${formattedMinutes}:${formattedSeconds}`)
+    }
+
+    audio.onerror = (error) => {
+      reject(new Error(`Failed to load audio from ${src}: ${error.message}`))
+    }
+  })
+}

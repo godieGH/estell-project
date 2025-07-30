@@ -35,6 +35,7 @@
             placeholder="Type your message..."
             rows="1"
             @input="autoGrowTextarea"
+            @focus="handleAreaFocus"
             v-model="message"
             ref="textareaRef"
           ></textarea>
@@ -134,6 +135,7 @@ import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useQuasar } from 'quasar'
 import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
+import { EventBus } from 'boot/event-bus'
 
 const userStore = useUserStore()
 const messageStore = useMessageStore()
@@ -549,6 +551,12 @@ async function sendMsg() {
     fullAudioBlob.value = null
   }
   await messageStore.processAllQueuedMessages()
+
+  autoGrowTextarea()
+}
+
+function handleAreaFocus() {
+  EventBus.emit('area-focus')
 }
 </script>
 
