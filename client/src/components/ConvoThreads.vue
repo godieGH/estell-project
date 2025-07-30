@@ -17,6 +17,7 @@
         :ref="message.notReadByMe && !message.isMine ? 'notReadbyMeRef' : null"
         :key="message.id"
         :data-message-id="message.id"
+        v-touch-hold="(event) => {showBubbleAction(event, message)}"
       >
         <div
           v-if="message.type === 'date_separator'"
@@ -283,7 +284,7 @@
       style="position: absolute; bottom: 70px; right: 10px; z-index: 999999"
     >
       <q-btn
-        @click="scrollToBottom()"
+        @click="() => { scrollToBottom(); showBubbleActionContainer = false}"
         class="q-py-md q-ma-xs"
         style="font-size: 12px; color: #333"
         :style="$q.dark.isActive ? 'background: grey;' : 'background: #ffffff;'"
@@ -291,6 +292,32 @@
         icon="fas fa-chevron-down"
       />
     </div>
+    
+    
+    
+    
+    
+<transition name="chat-bubble-fade">
+  <div v-if="showBubbleActionContainer" class="chat-bubble-action-container" >
+    <div class="blur-overlay" @click="showBubbleActionContainer = false"></div>
+    <div class="chat-bubble-actions" :style="bubbleActionContainerStyle">
+      <div>Reply to</div>
+      <div v-if="selectedMsg.isMine">Delete</div>
+      <div v-else>Hide</div>
+      <div v-if="selectedMsg.isMine && (Date.now() - (new Date(selectedMsg?.updated_at)).getTime()) < 120000 || (Date.now() - parseInt(selectedMsg.sent_at) < 120000 )">Edit</div>
+      <div v-if="selectedMsg.content.text" @click="copyText(selectedMsg.content.text)">Copy text</div>
+      <div>Share</div>
+    </div>
+  </div>
+</transition>
+
+
+
+
+    
+    
+    
+    
   </div>
 </template>
 <script setup>
@@ -879,6 +906,76 @@ function handleScroll() {
     showGodownBtn.value = false
   }
 }
+
+
+const showBubbleActionContainer = ref(false)
+const bubbleActionContainerStyle = ref({})
+const selectedMsg = ref(null)
+
+function showBubbleAction(event, msg) {
+  selectedMsg.value = msg
+ 
+  const messageBubbleElement = event.evt.touches[0].target.closest('.message-bubble');
+  if (!messageBubbleElement) return;
+
+  const containerRect = chatContainer.value.getBoundingClientRect();
+  const bubbleRect = messageBubbleElement.getBoundingClientRect();
+
+  // Calculate desired position relative to the chatContainer
+  let top = bubbleRect.top - containerRect.top;
+  let left = bubbleRect.left - containerRect.left;
+
+  // Define the dimensions of the action menu (approximate, or measure precisely)
+  const menuWidth = 200; // Approximate width of your action menu
+  const menuHeight = 250; // Approximate height of your action menu (5 actions * ~40px per action + padding)
+
+  // Adjust position to keep menu within chatContainer bounds
+  // Check if menu overflows to the right
+  if (left + menuWidth > containerRect.width) {
+    left = containerRect.width - menuWidth - 10; // 10px padding from right
+  }
+  // Check if menu overflows to the left (e.g., if bubble is very far right)
+  if (left < 0) {
+    left = 10; // 10px padding from left
+  }
+
+  // Check if menu overflows downwards
+  if (top + menuHeight > containerRect.height) {
+    // If it overflows, try to position it above the bubble
+    top = bubbleRect.bottom - containerRect.top - menuHeight;
+    // Ensure it doesn't go above the top of the container
+    if (top < 10) {
+      top = 10; // 10px padding from top
+    }
+  }
+
+  // If the bubble is near the top and menu overflows upwards
+  if (top < 0) {
+      top = 10; // Set to a minimum padding from the top
+  }
+
+
+  bubbleActionContainerStyle.value = {
+    top: `${top}px`,
+    left: `${left}px`,
+  };
+
+  showBubbleActionContainer.value = true;
+}
+
+async function copyText(txt) {
+   try {
+      await navigator.clipboard.writeText(txt)
+   
+      $q.notify({message: "message text copied to clipboard"})
+   } catch(e) {
+      $q.notify({message: e.message})
+   } finally {
+      showBubbleActionContainer.value = false
+   }
+}
+
+
 </script>
 
 <style scoped lang="scss">
@@ -1111,4 +1208,62 @@ function handleScroll() {
   animation: shake-and-blink 2s infinite ease-in-out;
   /* Adjust animation duration, iteration count, and timing function as needed */
 }
+
+.chat-bubble-action-container {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+
+  .blur-overlay {
+    position: absolute; /* Use fixed to cover the entire viewport, not just the chat container */
+    top: 0;
+    left: 0;
+    width: 100%; /* Cover full viewport width */
+    height: 100%; /* Cover full viewport height */
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px); // For Safari support
+    z-index: 1000; /* Ensure it's above other chat elements but below the actions */
+  }
+
+  .chat-bubble-actions {
+    position: absolute; /* Positioned relative to the chat-bubble-action-container */
+    border-radius: 20px;
+    padding: 10px 0;
+    background: white;
+    box-shadow: 1px 2px 8px rgba(0, 0, 0, 0.2); /* Stronger shadow for better visibility */
+    z-index: 1001; /* Ensure it's above the blur overlay */
+    min-width: 150px; /* Give it a minimum width */
+
+    div {
+      padding: 8px 50px 8px 20px;
+      color: black;
+      cursor: pointer; 
+
+      &:active {
+        background: #e4e4e4;
+      }
+    }
+  }
+}
+
+.chat-bubble-fade-enter-active,
+.chat-bubble-fade-leave-active {
+  transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.chat-bubble-fade-enter-from,
+.chat-bubble-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.9); /* Smaller scale for a popping effect */
+}
+
+.chat-bubble-fade-enter-to,
+.chat-bubble-fade-leave-from {
+  opacity: 1;
+  transform: scale(1);
+}
+
 </style>
