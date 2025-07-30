@@ -340,7 +340,7 @@ watch(
 )
 
 const logoSrc = computed(() => {
-  const mode = $q.dark.isActive ? 'white' : 'red'
+  const mode = $q.dark.isActive ? 'white' : process.env.VITE_LOGO_COLOR; // can be dark or red in the .env file
   return new URL(`../assets/e-logo-${mode}.png`, import.meta.url).href
 })
 
