@@ -208,6 +208,8 @@ export const useMessageStore = defineStore('messageStore', {
               console.error('Error removing message from IndexedDB:', dbError)
             }
           } else {
+             
+             
             console.error('Failed to send message to server:', response.error)
           }
         })
