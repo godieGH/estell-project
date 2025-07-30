@@ -4,6 +4,7 @@
     id="chatBubbleScrollArea"
     ref="chatContainer"
     class="q-pa-sm chat-container"
+    @scroll="handleScroll"
   >
     <q-virtual-scroll
       ref="virtualScroll"
@@ -22,6 +23,13 @@
           class="message-system text-center text-caption text-grey-6"
         >
           {{ date.formatDate(new Date(message.date), 'Do MMM, YYYY') }}
+        </div>
+
+        <div
+          v-else-if="message.type === 'unread_separator'"
+          class="message-system text-center text-caption text-grey-6"
+        >
+          unread messages
         </div>
 
         <div
@@ -268,6 +276,21 @@
         </div>
       </div>
     </q-virtual-scroll>
+
+    <div
+      v-if="showGodownBtn"
+      class="go-down-btn"
+      style="position: absolute; bottom: 70px; right: 10px; z-index: 999999"
+    >
+      <q-btn
+        @click="scrollToBottom()"
+        class="q-py-md q-ma-xs"
+        style="font-size: 12px; color: #333"
+        :style="$q.dark.isActive ? 'background: grey;' : 'background: #ffffff;'"
+        rounded
+        icon="fas fa-chevron-down"
+      />
+    </div>
   </div>
 </template>
 <script setup>
@@ -280,6 +303,7 @@ import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
 import { useMsgStore } from 'stores/messages'
 import { formatFileSize, getAvatarSrc } from 'src/composables/formater'
+import { EventBus } from 'boot/event-bus'
 
 const messageStore = useMessageStore()
 const imbMsg = useMsgStore()
@@ -373,6 +397,10 @@ onMounted(async () => {
       threshold: 0.9,
     },
   )
+
+  EventBus.on('area-focus', () => {
+    scrollToBottom()
+  })
 })
 
 async function recieveNew(msg) {
@@ -552,6 +580,8 @@ onUnmounted(() => {
     // Make sure observer is defined before disconnecting
     observer.disconnect()
   }
+
+  EventBus.off('area-focus')
 })
 
 const groupedMessages = computed(() => {
@@ -561,6 +591,7 @@ const groupedMessages = computed(() => {
 
   const processed = []
   let lastDate = null
+  let unreadSeparatorAdded = false
   const sortedMessages = [...messages.value].sort(
     (a, b) => new Date(a.sent_at) - new Date(b.sent_at),
   )
@@ -571,7 +602,7 @@ const groupedMessages = computed(() => {
     const currentMessageDate = date.formatDate(currentMessage.sent_at, 'YYYY-MM-DD')
     if (currentMessageDate !== lastDate) {
       processed.push({
-        id: `separator-${currentMessageDate}`, // Unique ID for the separator
+        id: `separator-${currentMessageDate}`,
         type: 'date_separator',
         date: currentMessage.sent_at,
       })
@@ -598,7 +629,22 @@ const groupedMessages = computed(() => {
       currentMessage.notReadByMe =
         !currentMessage.read_by || !currentMessage.read_by.includes(userStore.user.id)
     } else {
-      currentMessage.notReadByMe = false // Messages sent by the user are considered read by them.
+      currentMessage.notReadByMe = false
+    }
+
+    if (
+      !unreadSeparatorAdded &&
+      !currentMessage.isMine &&
+      currentMessage.sender_type === 'user' &&
+      !currentMessage.read_by?.includes(userStore.user.id)
+    ) {
+      processed.push({
+        id: `unread-separator-${currentMessage.id}`,
+        type: 'unread_separator',
+        date: currentMessage.sent_at,
+        content: { text: 'unread messages' },
+      })
+      unreadSeparatorAdded = true
     }
 
     processed.push(currentMessage)
@@ -607,8 +653,24 @@ const groupedMessages = computed(() => {
   return processed
 })
 
+let isFistMounted
 const scrollToBottom = () => {
   if (virtualScroll.value && groupedMessages.value.length > 0) {
+    if (isFistMounted) {
+      const x = groupedMessages.value.findIndex((msg) => {
+        return (
+          !msg.isMine && msg.sender_type === 'user' && !msg.read_by?.includes(userStore.user.id)
+        )
+      })
+
+      if (x >= 0) {
+        virtualScroll.value.scrollTo(x - 1, 0)
+        isFistMounted = false
+      } else {
+        virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 0)
+      }
+      return
+    }
     virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 0)
   }
 }
@@ -624,7 +686,7 @@ watch(
 )
 
 onMounted(() => {
-  void props.currentConversation
+  isFistMounted = true
   nextTick(() => {
     scrollToBottom()
   })
@@ -796,6 +858,27 @@ watch(
   },
   { immediate: true },
 )
+
+const showGodownBtn = ref(false)
+const getDistanceFromBottom = () => {
+  if (chatContainer.value) {
+    const scrollHeight = chatContainer.value.scrollHeight
+    const clientHeight = chatContainer.value.clientHeight
+    const scrollTop = chatContainer.value.scrollTop
+
+    const distanceFromBottom = scrollHeight - clientHeight - scrollTop
+    return distanceFromBottom
+  }
+  return null
+}
+
+function handleScroll() {
+  if (getDistanceFromBottom() > 250) {
+    showGodownBtn.value = true
+  } else {
+    showGodownBtn.value = false
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -1002,5 +1085,30 @@ watch(
     overflow: hidden;
     text-overflow: ellipsis;
   }
+}
+
+@keyframes shake-and-blink {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  25% {
+    transform: translateY(-5px);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  75% {
+    transform: translateY(5px);
+    opacity: 0.8;
+  }
+}
+
+.go-down-btn {
+  animation: shake-and-blink 2s infinite ease-in-out;
+  /* Adjust animation duration, iteration count, and timing function as needed */
 }
 </style>

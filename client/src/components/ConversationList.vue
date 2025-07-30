@@ -59,7 +59,45 @@
                   v-if="convo.messages.length > 0"
                   style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis"
                 >
-                  {{ convo.messages?.[0]?.content?.text }}
+                  <span v-if="convo.messages?.[0]?.content?.voice_note">
+                    <i class="material-icons">mic</i>
+                    <span class="q-ml-xs text-grey" style="font-size: 11px">{{
+                      convo.messages?.[0]?.content?.voice_note_duration
+                    }}</span>
+                  </span>
+
+                  <span v-else-if="convo.messages?.[0]?.content?.attachment">
+                    <span v-if="convo.messages?.[0]?.content?.attachment_type === 'image'">
+                      <i class="material-icons">image</i>
+                    </span>
+                    <span v-else-if="convo.messages?.[0]?.content?.attachment_type === 'video'">
+                      <i class="material-icons">videocam</i>
+                    </span>
+                    <span v-else-if="convo.messages?.[0]?.content?.attachment_type === 'file'">
+                      <i class="material-icons">insert_drive_file</i>
+                    </span>
+                    <span v-else-if="convo.messages?.[0]?.content?.attachment_type === 'link'">
+                      <i class="material-icons">link</i>
+                    </span>
+                    <span v-else-if="convo.messages?.[0]?.content?.attachment_type === 'location'">
+                      <i class="material-icons">location</i>
+                    </span>
+                    <span v-else></span>
+                    <span class="q-ml-xs" style="font-size: 13px">
+                      {{ convo.messages?.[0]?.content?.text }}
+                    </span>
+                    <i
+                      class="text-grey"
+                      style="font-size: 12px"
+                      v-if="!convo.messages?.[0]?.content?.text"
+                    >
+                      Sent at {{ date.formatDate(convo.messages?.[0]?.sent_at, 'HH:mm DD/MM/YY') }}
+                    </i>
+                  </span>
+
+                  <span class="q-ml-xs" style="font-size: 13px">
+                    {{ convo.messages?.[0]?.content?.text }}
+                  </span>
                 </div>
                 <div v-else class="text-grey">👋 Hi there...</div>
               </q-item-label>
@@ -85,10 +123,11 @@
 </template>
 
 <script setup>
-import { getAvatarSrc, formatTime } from 'src/composables/formater'
+import { getAvatarSrc, formatTime, audioDuration } from 'src/composables/formater'
 import { ref, onMounted, watch, onUnmounted } from 'vue'
 import { api } from 'boot/axios'
 import { socket } from 'boot/socket'
+import { date } from 'quasar'
 
 import { useMessageStore } from 'stores/messageStore'
 import { useMsgStore } from 'stores/messages'
@@ -133,8 +172,20 @@ async function fetchConversation() {
 
     try {
       const { data } = await api.get(`/api/get/all/user/conversations/${type}`)
-      console.log(data)
-      myConversations.value = [...data]
+
+      const newData = await Promise.all(
+        data.map(async (a) => {
+          if (a.messages?.[0]?.content?.voice_note) {
+            a.messages[0].content.voice_note_duration = await audioDuration(
+              a.messages?.[0]?.content?.voice_note,
+            )
+          }
+          return a
+        }),
+      )
+
+      //console.log(newData)
+      myConversations.value = [...newData]
     } catch (err) {
       console.log(err.message)
     } finally {

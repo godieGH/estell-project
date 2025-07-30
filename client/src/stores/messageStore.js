@@ -24,7 +24,7 @@ export const useMessageStore = defineStore('messageStore', {
   }),
   actions: {
     async initializeStore() {
-      console.log('Initializing message store and loading queued messages from IndexedDB.')
+      //console.log('Initializing message store and loading queued messages from IndexedDB.')
       try {
         const storedMessages = await db.queuedMessages.toArray()
         this.queued = storedMessages.map((msg) => {
@@ -37,7 +37,7 @@ export const useMessageStore = defineStore('messageStore', {
           }
           return msg
         })
-        console.log(`Loaded ${this.queued.length} queued messages from IndexedDB.`)
+        //console.log(`Loaded ${this.queued.length} queued messages from IndexedDB.`)
         if (this.queued.length > 0) {
           this.processAllQueuedMessages()
         }
@@ -90,7 +90,7 @@ export const useMessageStore = defineStore('messageStore', {
           },
         }
         await db.queuedMessages.put(msgToStore)
-        console.log(`Message ${newMsg.id} queued and stored in IndexedDB.`)
+        //console.log(`Message ${newMsg.id} queued and stored in IndexedDB.`)
       } catch (error) {
         console.error('Error storing message in IndexedDB:', error)
       }
@@ -203,7 +203,7 @@ export const useMessageStore = defineStore('messageStore', {
             // Remove from IndexedDB on successful send
             try {
               await db.queuedMessages.delete(msg.id)
-              console.log(`Message ${msg.id} successfully sent and removed from IndexedDB.`)
+              //console.log(`Message ${msg.id} successfully sent and removed from IndexedDB.`)
             } catch (dbError) {
               console.error('Error removing message from IndexedDB:', dbError)
             }
@@ -220,7 +220,7 @@ export const useMessageStore = defineStore('messageStore', {
       }
     },
     async processAllQueuedMessages() {
-      console.log('Processing all currently queued messages.')
+      //console.log('Processing all currently queued messages.')
       // Create a copy of the queued array to avoid issues if messages are removed during iteration
       const messagesToProcess = [...this.queued]
       for (const msg of messagesToProcess) {
