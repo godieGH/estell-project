@@ -73,15 +73,13 @@ module.exports = function (io, socket) {
 
         // Send system message for conversation creation
         let creatorInfo = "";
-        if (conversation.type === "private") {
+        if (conversation.type === "private" || conversation.type === "group") {
           const creatorUser = await User.findByPk(conversation.creator_id); // Using the destructured User model
           creatorInfo = creatorUser ? creatorUser.username : "Unknown User";
-        } else if (conversation.type === "group") {
-          creatorInfo = conversation.name || "Unknown Group";
         }
 
         const creationMessageContent = {
-          text: `This ${conversation.type} chat is created by @${creatorInfo}.`,
+          text: `This ${conversation.type} chat was created by @${creatorInfo}.`,
           system_message: true, // Mark as a system message
           type: "initial_msg",
         };

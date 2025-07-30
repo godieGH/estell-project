@@ -753,7 +753,7 @@ router.post("/open/chart", authenticateAccess, async (req, res) => {
   try {
     const { type, conversationId: conversation_id } = req.body;
 
-    if (type === "private") {
+    if (type === "private" || type === "group") {
       const conversation = await Conversation.findByPk(conversation_id);
 
       if (conversation) {
@@ -800,51 +800,128 @@ router.get(
   authenticateAccess,
   async (req, res) => {
     try {
-      if (req.params.type === "private") {
-        const userId = req.userId; // Assuming req.userId is correctly set by authenticateAccess
+      const userId = req.userId; // Assuming req.userId is correctly set by authenticateAccess
 
-        // 1. Find all private conversation IDs the current user is a part of
-        const participantConversations = await Participant.findAll({
-          where: {
-            user_id: userId,
-          },
-          attributes: ["conversation_id", "id"], // 'id' here is the Participant ID
-          raw: true,
-        });
+      // Common logic for both private and group conversations (getting user's participant entries)
+      const participantConversations = await Participant.findAll({
+        where: {
+          user_id: userId,
+        },
+        attributes: ["conversation_id", "id"], // 'id' here is the Participant ID
+        raw: true,
+      });
 
-        const conversationIds = participantConversations.map(
-          (p) => p.conversation_id,
-        );
+      const conversationIds = participantConversations.map(
+        (p) => p.conversation_id,
+      );
 
-        const userParticipantIdMap = new Map(
-          participantConversations.map((p) => [p.conversation_id, p.id]),
-        );
+      const userParticipantIdMap = new Map(
+        participantConversations.map((p) => [p.conversation_id, p.id]),
+      );
 
-        if (conversationIds.length === 0) {
-          return res.json([]);
+      if (conversationIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Determine conversation type
+      const conversationType =
+        req.params.type === "private" ? "private" : "group";
+
+      // Fetch conversations based on type
+      const conversations = await Conversation.findAll({
+        where: {
+          id: { [Op.in]: conversationIds },
+          type: conversationType,
+        },
+        order: [["last_message_at", "DESC"]],
+        raw: true,
+      });
+
+      // Filter out conversations that don't match the requested type
+      const filteredConversationIds = conversations.map((conv) => conv.id);
+
+      if (filteredConversationIds.length === 0) {
+        return res.json([]);
+      }
+
+      // --- ReadStatus and Unread Count Calculation (Common Logic) ---
+      const currentUserParticipantIds = Array.from(
+        userParticipantIdMap.values(),
+      );
+
+      const readStatuses = await ReadStatus.findAll({
+        where: {
+          participant_id: { [Op.in]: currentUserParticipantIds },
+          conversation_id: { [Op.in]: filteredConversationIds },
+        },
+        attributes: ["conversation_id", "read_at", "participant_id"],
+        raw: true,
+      });
+
+      const readStatusMap = new Map();
+      readStatuses.forEach((rs) => {
+        // Ensure the read status belongs to the current user's participant entry for that conversation
+        if (
+          userParticipantIdMap.get(rs.conversation_id) === rs.participant_id
+        ) {
+          readStatusMap.set(rs.conversation_id, rs.read_at);
         }
+      });
 
-        // 2. Fetch the conversations themselves
-        const conversations = await Conversation.findAll({
-          where: {
-            id: { [Op.in]: conversationIds },
-            type: "private",
-          },
-          order: [["last_message_at", "DESC"]],
-          raw: true,
-        });
+      const unreadCountsPromises = conversations.map(async (conv) => {
+        const readAt = readStatusMap.get(conv.id);
+        let unreadCount = 0;
 
-        /* 
-        const conversationMap = new Map(
-          conversations.map((conv) => [conv.id, conv]),
-        );
-        
-        */
+        if (readAt) {
+          unreadCount = await Message.count({
+            where: {
+              conversation_id: conv.id,
+              sent_at: { [Op.gt]: readAt },
+            },
+          });
+        } else {
+          // If no read_at status exists for this conversation for the current user,
+          // it means they haven't read any messages yet, so count all messages.
+          unreadCount = await Message.count({
+            where: {
+              conversation_id: conv.id,
+            },
+          });
+        }
+        return { conversation_id: conv.id, unreadCount };
+      });
 
-        // 3. For each conversation, find the other participant
+      const unreadCounts = await Promise.all(unreadCountsPromises);
+      const unreadCountsMap = new Map(
+        unreadCounts.map((uc) => [uc.conversation_id, uc.unreadCount]),
+      );
+
+      // --- Fetch the single most recent message for each conversation (Common Logic) ---
+      const latestMessages = await Message.findAll({
+        where: {
+          conversation_id: { [Op.in]: filteredConversationIds },
+        },
+        order: [
+          ["conversation_id", "ASC"], // Group by conversation_id first
+          ["sent_at", "DESC"], // Then order by sent_at to get the latest
+        ],
+        raw: true,
+      });
+
+      const latestMessageMap = new Map();
+      latestMessages.forEach((msg) => {
+        // This ensures only the latest message for each conversation is stored
+        if (!latestMessageMap.has(msg.conversation_id)) {
+          latestMessageMap.set(msg.conversation_id, msg);
+        }
+      });
+
+      // --- Specific logic for Private vs. Group ---
+      if (conversationType === "private") {
+        // 3. For each private conversation, find the other participant
         const allOtherParticipants = await Participant.findAll({
           where: {
-            conversation_id: { [Op.in]: conversationIds },
+            conversation_id: { [Op.in]: filteredConversationIds },
             user_id: { [Op.ne]: userId },
           },
           attributes: ["conversation_id", "user_id"],
@@ -866,79 +943,7 @@ router.get(
 
         const userMap = new Map(otherUsers.map((user) => [user.id, user]));
 
-        // --- Fetch ReadStatus using the specific Participant ID for the current user ---
-        const currentUserParticipantIds = Array.from(
-          userParticipantIdMap.values(),
-        );
-
-        const readStatuses = await ReadStatus.findAll({
-          where: {
-            participant_id: { [Op.in]: currentUserParticipantIds },
-            conversation_id: { [Op.in]: conversationIds },
-          },
-          attributes: ["conversation_id", "read_at", "participant_id"],
-          raw: true,
-        });
-
-        const readStatusMap = new Map();
-        readStatuses.forEach((rs) => {
-          if (
-            userParticipantIdMap.get(rs.conversation_id) === rs.participant_id
-          ) {
-            readStatusMap.set(rs.conversation_id, rs.read_at);
-          }
-        });
-
-        // --- Optimized Unread Count Calculation ---
-        // Prepare an array to hold promises for unread counts
-        const unreadCountsPromises = conversations.map(async (conv) => {
-          const readAt = readStatusMap.get(conv.id);
-          let unreadCount = 0;
-
-          if (readAt) {
-            unreadCount = await Message.count({
-              where: {
-                conversation_id: conv.id,
-                sent_at: { [Op.gt]: readAt },
-              },
-            });
-          } else {
-            // If no read_at status exists for this conversation for the current user,
-            // it means they haven't read any messages yet, so count all messages.
-            unreadCount = await Message.count({
-              where: {
-                conversation_id: conv.id,
-              },
-            });
-          }
-          return { conversation_id: conv.id, unreadCount };
-        });
-
-        const unreadCounts = await Promise.all(unreadCountsPromises);
-        const unreadCountsMap = new Map(
-          unreadCounts.map((uc) => [uc.conversation_id, uc.unreadCount]),
-        );
-
-        // 5. Fetch the single most recent message for each conversation
-        const latestMessages = await Message.findAll({
-          where: {
-            conversation_id: { [Op.in]: conversationIds },
-          },
-          order: [
-            ["conversation_id", "ASC"],
-            ["sent_at", "DESC"],
-          ],
-          raw: true,
-        });
-
-        const latestMessageMap = new Map();
-        latestMessages.forEach((msg) => {
-          if (!latestMessageMap.has(msg.conversation_id)) {
-            latestMessageMap.set(msg.conversation_id, msg);
-          }
-        });
-
-        // 6. Combine all data
+        // 6. Combine all data for private conversations
         const myConversations = conversations.map((conv) => {
           const conversationData = conv;
 
@@ -968,6 +973,60 @@ router.get(
         });
 
         res.json(myConversations);
+      } else if (conversationType === "group") {
+        // For Group conversations, fetch ALL participants for each group
+        const allGroupParticipants = await Participant.findAll({
+          where: {
+            conversation_id: { [Op.in]: filteredConversationIds },
+          },
+          attributes: ["conversation_id", "user_id"],
+          raw: true,
+        });
+
+        const allParticipantUserIds = Array.from(
+          new Set(allGroupParticipants.map((p) => p.user_id)),
+        );
+
+        const allParticipantUsers = await User.findAll({
+          where: {
+            id: { [Op.in]: allParticipantUserIds },
+          },
+          attributes: ["id", "username", "name", "avatar"],
+          raw: true,
+        });
+
+        const allUsersMap = new Map(
+          allParticipantUsers.map((user) => [user.id, user]),
+        );
+
+        // Group participants by conversation_id
+        const participantsByConversation = new Map();
+        allGroupParticipants.forEach((p) => {
+          if (!participantsByConversation.has(p.conversation_id)) {
+            participantsByConversation.set(p.conversation_id, []);
+          }
+          participantsByConversation
+            .get(p.conversation_id)
+            .push({ user: allUsersMap.get(p.user_id) });
+        });
+
+        // Combine all data for group conversations
+        const myGroupConversations = conversations.map((conv) => {
+          const conversationData = conv;
+          const latestMessage = latestMessageMap.get(conv.id);
+          const unreadCount = unreadCountsMap.get(conv.id) || 0;
+          const groupParticipants =
+            participantsByConversation.get(conv.id) || [];
+
+          return {
+            ...conversationData,
+            participants: groupParticipants, // Array of all participants in the group
+            messages: latestMessage ? [latestMessage] : [],
+            unreadCount: unreadCount,
+          };
+        });
+
+        res.json(myGroupConversations);
       } else {
         res.status(400).json({ message: "Invalid conversation type" });
       }
@@ -979,6 +1038,7 @@ router.get(
     }
   },
 );
+
 
 router.get("/get/user/:id/", (req, res) => {
   const userId = req.params.id;
@@ -998,6 +1058,9 @@ router.get("/get/user/:id/", (req, res) => {
       res.status(500).json({ message: "Server error", error: err.message });
     });
 });
+
+
+
 
 const {
   msgUploadAttachment,

@@ -39,7 +39,7 @@
               <i @click="hideChat()" class="q-pr-sm fas fa-chevron-left"></i>
               <q-skeleton v-if="!currentUserToDisplay" type="circle" size="45px" />
               <q-avatar v-else size="45px">
-                <img :src="getAvatarSrc(currentUserToDisplay.avatar)" />
+                <img :src="getAvatarSrc(currentConversation.groupAvatar)" />
               </q-avatar>
               <q-skeleton
                 v-if="!currentUserToDisplay"
@@ -52,7 +52,7 @@
                 <span v-if="currentConversation.type === 'private'"
                   >@{{ currentUserToDisplay.username }}</span
                 >
-                <span v-else>{{ currentUserToDisplay.groupName }}</span>
+                <span v-else>{{ currentConversation.name }}</span>
               </span>
             </div>
           </div>
@@ -60,7 +60,7 @@
             <div style="display: flex; align-items: center">
               <q-skeleton v-if="!currentUserToDisplay" type="circle" size="45px" />
               <q-avatar v-else size="45px">
-                <img :src="getAvatarSrc(currentUserToDisplay.avatar)" />
+                <img :src="getAvatarSrc(currentConversation.groupAvatar)" />
               </q-avatar>
               <q-skeleton
                 v-if="!currentUserToDisplay"
@@ -73,7 +73,7 @@
                 <span v-if="currentConversation.type === 'private'"
                   >@{{ currentUserToDisplay.username }}</span
                 >
-                <span v-else>{{ currentUserToDisplay.groupName }}</span>
+                <span v-else>{{ currentConversation.name }}</span>
               </span>
             </div>
           </div>
@@ -282,7 +282,7 @@ async function selectConversation(conversationId, type) {
     spinnerColor: 'white',
     backgroundColor: 'blue-grey-10',
   })
-  if (type === 'private') {
+  if (type === 'private' || type === 'group') {
     try {
       const { data } = await api.post('api/open/chart', { conversationId, type })
       //console.log(data)

@@ -40,18 +40,29 @@
             class="row items-center no-wrap q-py-sm"
           >
             <q-item-section avatar>
-              <q-avatar size="48px">
+              <q-avatar v-if="convo.type === 'private'" size="48px">
                 <img :src="getAvatarSrc(convo.participants?.[0]?.user?.avatar)" />
+              </q-avatar>
+              <q-avatar v-else-if="convo.type === 'group'" size="48px">
+                <img :src="getAvatarSrc(convo.groupAvatar)" />
               </q-avatar>
             </q-item-section>
 
             <q-item-section>
               <q-item-label>
                 <span
+                v-if="convo.type === 'private'"
                   class="text-grey"
                   style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis"
                 >
                   {{ convo.participants?.[0]?.user?.name || 'Unknown User' }}
+                </span>
+                <span
+                v-else-if="convo.type === 'group'"
+                  class="text-grey"
+                  style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis"
+                >
+                  {{ convo.name || 'Unknown User' }}
                 </span>
               </q-item-label>
               <q-item-label class="q-mt-xs">
@@ -191,6 +202,30 @@ async function fetchConversation() {
     } finally {
       initialLoading.value = false
     }
+  } else if(activeTab.value === 'Groups') {
+     let type = 'Groups'
+     
+     try {
+        const { data } = await api.get(`/api/get/all/user/conversations/${type}`)
+        
+        
+      const newData = await Promise.all(
+        data.map(async (a) => {
+          if (a.messages?.[0]?.content?.voice_note) {
+            a.messages[0].content.voice_note_duration = await audioDuration(
+              a.messages?.[0]?.content?.voice_note,
+            )
+          }
+          return a
+        }),
+      )
+
+      //console.log(newData)
+      myConversations.value = [...newData]
+        
+     } catch (e) {
+        console.error(e.message)
+     }
   }
 }
 
