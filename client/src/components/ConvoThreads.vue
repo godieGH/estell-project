@@ -284,10 +284,12 @@
       style="position: absolute; bottom: 70px; right: 10px; z-index: 999999"
     >
       <q-btn
-        @click="() => { scrollToBottom(); showBubbleActionContainer = false}"
+        @click="() => { scrollTo(); showBubbleActionContainer = false}"
         class="q-py-md q-ma-xs"
         style="font-size: 12px; color: #333"
-        :style="$q.dark.isActive ? 'background: grey;' : 'background: #ffffff;'"
+        :style="{
+            background: newMsgAvailable?'green':null
+            }"
         rounded
         icon="fas fa-chevron-down"
       />
@@ -330,7 +332,7 @@ import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
 import { useMsgStore } from 'stores/messages'
 import { formatFileSize, getAvatarSrc } from 'src/composables/formater'
-import { EventBus } from 'boot/event-bus'
+
 
 const messageStore = useMessageStore()
 const imbMsg = useMsgStore()
@@ -344,6 +346,8 @@ const notReadbyMeRef = ref(null)
 let observer
 
 const messages = ref([])
+const newMsgAvailable = ref(false)
+let isFirstMounted
 
 function checkReadBy(readByArray) {
   if (readByArray.length === 0) {
@@ -384,6 +388,7 @@ watch(
 )
 
 onMounted(async () => {
+  isFirstMounted = true
   imbMsg.initializeStore()
   await fetchHistMsg()
 
@@ -409,10 +414,9 @@ onMounted(async () => {
         if (Number.isInteger(readMsgIndex)) {
           //messages.value[readMsg].read_by.push(userStore.user.id)
           try {
-            await api.post(
-              `/api/read/msg/${messages.value[readMsgIndex].conversation_id}/${entry.target.dataset.messageId}/`,
-            )
+            await api.post(`/api/read/msg/${messages.value[readMsgIndex].conversation_id}/${entry.target.dataset.messageId}/`)
             socket.emit('read_msg', { msgId: readMsg.id, convoId: readMsg.conversation_id })
+            newMsgAvailable.value = false;
             observer.unobserve(entry.target)
           } catch (e) {
             console.error(e.message)
@@ -421,14 +425,19 @@ onMounted(async () => {
       }
     },
     {
-      threshold: 0.9,
+      threshold: 0.1,
     },
   )
+  
+  if(messages.value.findIndex(msg => !msg.read_by.includes(userStore.user.id)) > 0) {
+     scrollTo()
+  } else {
+     scrollTo()
+  }
 
-  EventBus.on('area-focus', () => {
-    scrollToBottom()
-  })
+  
 })
+
 
 async function recieveNew(msg) {
   if (msg.conversation_id !== props.currentConversation.id) return
@@ -596,21 +605,37 @@ const seekVoiceNote = (event, messageId) => {
   }
 }
 
-onUnmounted(() => {
+onUnmounted(async() => {
   if (currentAudio.value) {
     currentAudio.value.pause()
     currentAudio.value = null
   }
+  
+  const newMsgStart = groupedMessages.value.findIndex((msg) => {
+        return (
+          msg.id === unreadSeparatorMsgId.value
+        )
+      })
+  if(newMsgStart >= 0 && !newMsgAvailable.value) {
+     try {
+        await api.post(`/api/read/msg/${props.currentConversation.id}/${messages.value[messages.value.length - 1].id}/`)
+         socket.emit('read_msg', { msgId: messages.value[messages.value.length - 1].id, convoId: props.currentConversation.id })
+         newMsgAvailable.value = false;
+     } catch(e) {
+        console.error(e.massage)
+     }
+  }
+  
   socket.off('new_msg', recieveNew)
   socket.off('someone_raed_msg', someone_raed_msg)
   if (observer) {
     // Make sure observer is defined before disconnecting
     observer.disconnect()
   }
-
-  EventBus.off('area-focus')
 })
 
+
+const unreadSeparatorMsgId = ref("123456")
 const groupedMessages = computed(() => {
   if (!messages.value || messages.value.length === 0) {
     return []
@@ -651,8 +676,8 @@ const groupedMessages = computed(() => {
     }
 
     currentMessage.isMine = currentMessage.sender_id === userStore.user.id
-
-    if (!currentMessage.isMine) {
+    
+    if (!currentMessage.isMine && i === sortedMessages.length - 1) {
       currentMessage.notReadByMe =
         !currentMessage.read_by || !currentMessage.read_by.includes(userStore.user.id)
     } else {
@@ -666,7 +691,7 @@ const groupedMessages = computed(() => {
       !currentMessage.read_by?.includes(userStore.user.id)
     ) {
       processed.push({
-        id: `unread-separator-${currentMessage.id}`,
+        id: unreadSeparatorMsgId.value,
         type: 'unread_separator',
         date: currentMessage.sent_at,
         content: { text: 'unread messages' },
@@ -680,19 +705,19 @@ const groupedMessages = computed(() => {
   return processed
 })
 
-let isFistMounted
-const scrollToBottom = () => {
+
+const scrollTo = () => {
   if (virtualScroll.value && groupedMessages.value.length > 0) {
-    if (isFistMounted) {
+    if (isFirstMounted) {
       const x = groupedMessages.value.findIndex((msg) => {
         return (
-          !msg.isMine && msg.sender_type === 'user' && !msg.read_by?.includes(userStore.user.id)
+          msg.id === unreadSeparatorMsgId.value
         )
       })
-
+      
       if (x >= 0) {
-        virtualScroll.value.scrollTo(x - 1, 0)
-        isFistMounted = false
+        virtualScroll.value.scrollTo(x, 0)
+        isFirstMounted = false
       } else {
         virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 0)
       }
@@ -706,18 +731,22 @@ watch(
   groupedMessages,
   () => {
     nextTick(() => {
-      scrollToBottom()
+      if(groupedMessages.value[groupedMessages.value.length - 1].isMine) {
+         scrollTo()
+      }
+      if(!groupedMessages.value[groupedMessages.value.length - 1].isMine && getDistanceFromBottom() < 200) {
+         scrollTo()
+      }
+    
+       if(getDistanceFromBottom() > 250 && !groupedMessages.value[groupedMessages.value.length - 1].isMine) {
+          newMsgAvailable.value = true;
+       }
     })
   },
   { deep: true },
 )
+  
 
-onMounted(() => {
-  isFistMounted = true
-  nextTick(() => {
-    scrollToBottom()
-  })
-})
 
 const getIconForFileType = (metadata) => {
   if (!metadata) {
@@ -899,11 +928,30 @@ const getDistanceFromBottom = () => {
   return null
 }
 
-function handleScroll() {
+async function handleScroll() {
   if (getDistanceFromBottom() > 250) {
     showGodownBtn.value = true
   } else {
     showGodownBtn.value = false
+    newMsgAvailable.value = false
+  }
+  
+  
+  if(getDistanceFromBottom() < 50) {
+     const newMsgStart = groupedMessages.value.findIndex((msg) => {
+        return (
+          msg.id === unreadSeparatorMsgId.value
+        )
+      })
+     if(newMsgStart >= 0 && !newMsgAvailable.value) {
+        try {
+           await api.post(`/api/read/msg/${props.currentConversation.id}/${messages.value[messages.value.length - 1].id}/`)
+            socket.emit('read_msg', { msgId: messages.value[messages.value.length - 1].id, convoId: props.currentConversation.id })
+            newMsgAvailable.value = false;
+        } catch(e) {
+           console.error(e.massage)
+        }
+     }
   }
 }
 
