@@ -188,8 +188,7 @@ const messageStore = useMessageStore()
 watch(
   IMB.messages,
   (newmsg) => {
-    void newmsg
-    fetchConversation()
+    fetchConversation(newmsg)
   },
   {
     deep: true,
@@ -198,8 +197,7 @@ watch(
 watch(
   messageStore.queued,
   (newMsgs) => {
-    void newMsgs
-    fetchConversation()
+    fetchConversation(newMsgs)
   },
   { deep: true },
 )

@@ -4,6 +4,8 @@
     class="chat-input-area"
     ref="chatInputAreaRef"
   >
+     
+     
     <transition name="mic-fade" appear>
       <button
         @touchstart="startRecording"
@@ -373,6 +375,10 @@ const startRecording = (e) => {
     startX.value = e.touches[0].clientX
   }
 
+
+
+   playAdioBeep('sound-1-mic.m4a', true)
+
   waitABitId.value = setTimeout(() => {
     if (e.touches && e.touches.length > 0 && e.touches[0].clientX === startX.value) {
       isRecording.value = true
@@ -383,12 +389,15 @@ const startRecording = (e) => {
       }, 1000)
       mediaRecorder = null
       fullAudioBlob.value = null
+  
       startRecordingAudio()
     }
-  }, 150)
+  }, 200)
 }
 
 const startRecordingAudio = () => {
+  
+  
   navigator.mediaDevices
     .getUserMedia({ audio: true })
     .then(function (stream) {
@@ -453,6 +462,7 @@ const cancelRecording = () => {
 
   mediaRecorder = null
   fullAudioBlob.value = null
+  
 }
 
 const stopRecording = () => {
@@ -481,6 +491,8 @@ const stopRecording = () => {
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop()
       }
+      
+      playAdioBeep('sound-2-mic.m4a', true)
 
       mediaRecorder.onstop = function () {
         const mimeType = getSupportedAudioMimeType()
@@ -510,6 +522,17 @@ const stopRecording = () => {
   isRecording.value = false
   recordingDuration.value = 0
   currentTranslateX.value = 0
+}
+
+function playAdioBeep(src, vibrate) {
+   const audio = new Audio()
+   audio.src = src
+      
+   audio.play()
+   
+   if(vibrate) {
+      navigator.vibrate(100)
+   }
 }
 
 onUnmounted(() => {

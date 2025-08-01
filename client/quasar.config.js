@@ -22,6 +22,7 @@ export default defineConfig((ctx) => {
       'event-bus',
       ctx.dev ? 'eruda' : null,
       'global-components',
+      'context-menu-handle',
     ],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css

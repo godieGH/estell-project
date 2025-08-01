@@ -13,12 +13,22 @@
       v-slot="{ item: message }"
       virtual-scroll-item-size="35"
     >
+       
       <div
         :ref="message.notReadByMe && !message.isMine ? 'notReadbyMeRef' : null"
         :key="message.id"
+        :style="message.id === swipingMessageId? swipeToReplyStyle: {}"
+        @touchstart="startSwipe"
+        @touchend="restoreSwipe"
+        @touchmove= "(event) => {swipeToReply(event, message.id)}"
         :data-message-id="message.id"
         v-touch-hold="(event) => {showBubbleAction(event, message)}"
       >
+          <div v-if="message.id === swipingMessageId && panX > 60" style="position: absolute; top: 35%; font-size: 20px;">
+             <q-icon name="reply"/>
+          </div>
+          
+          
         <div
           v-if="message.type === 'date_separator'"
           class="message-system text-center text-caption text-grey-6"
@@ -302,6 +312,11 @@
 <transition name="chat-bubble-fade">
   <div v-if="showBubbleActionContainer" class="chat-bubble-action-container" >
     <div class="blur-overlay" @click="showBubbleActionContainer = false"></div>
+    
+    <div class="reaaction-btns" :style="bubbleReactionsStyle">
+       <div v-for="emoji in reactionsEmojis" :key="emoji">{{emoji}}</div>
+       <div><i class="text-dark material-icons">add</i></div>
+    </div>
     <div class="chat-bubble-actions" :style="bubbleActionContainerStyle">
       <div>Reply to</div>
       <div v-if="selectedMsg.isMine">Delete</div>
@@ -958,6 +973,8 @@ async function handleScroll() {
 
 const showBubbleActionContainer = ref(false)
 const bubbleActionContainerStyle = ref({})
+const reactionsEmojis = ['❤', '👍', '😀', '🙏', '✊️']
+const bubbleReactionsStyle = ref({})
 const selectedMsg = ref(null)
 
 function showBubbleAction(event, msg) {
@@ -1007,9 +1024,85 @@ function showBubbleAction(event, msg) {
     top: `${top}px`,
     left: `${left}px`,
   };
-
+  
+  
+  if(selectedMsg.value.isMine) {
+      bubbleReactionsStyle.value = {
+     top: `${top>70?(top-70):top+170}px`,
+     right: `15px`
+  };
+  } else {
+      bubbleReactionsStyle.value = {
+     top: `${top>70?(top-70):top+170}px`,
+     left: `15px`
+  };
+  }
   showBubbleActionContainer.value = true;
 }
+
+
+
+const swipingMessageId = ref(null);
+const panX = ref(0);
+const startX = ref(0);
+const startY = ref(0);
+
+const swipeToReplyStyle = computed(() => {
+    return {
+        transform: `translateX(${panX.value<60?panX.value:50}px)`,
+        transition: 'transform 0.2s ease-out'
+    };
+});
+
+function startSwipe(e) {
+   if (!e.touches || e.touches.length === 0) return;
+   startX.value = e.touches[0].clientX;
+   startY.value = e.touches[0].clientY;
+}
+
+let hasVibrated = false;
+
+
+function swipeToReply(e, msgId) {
+   swipingMessageId.value = msgId;
+
+   if (!e.touches || e.touches.length === 0) return;
+
+   const currentX = e.touches[0].clientX;
+   const currentY = e.touches[0].clientY;
+
+   const deltaX = currentX - startX.value;
+   const deltaY = currentY - startY.value;
+
+   if (Math.abs(deltaY) > Math.abs(deltaX)) {
+      panX.value = 0;
+      return;
+   }
+
+   if (deltaX > 0) {
+      panX.value = deltaX;
+
+      if (panX.value >= 60 && !hasVibrated) {
+         navigator.vibrate(100);
+         hasVibrated = true;
+      }
+   } else {
+      panX.value = 0;
+   }
+}
+
+
+
+function restoreSwipe() {
+   if(panX.value >= 60) {
+      //console.log('passed')
+   }
+   panX.value = 0
+   hasVibrated = false
+   swipingMessageId.value = null
+}
+
+
 
 async function copyText(txt) {
    try {
@@ -1020,8 +1113,13 @@ async function copyText(txt) {
       $q.notify({message: e.message})
    } finally {
       showBubbleActionContainer.value = false
+      selectedMsg.value = null
    }
 }
+
+
+
+
 
 
 </script>
@@ -1274,6 +1372,30 @@ async function copyText(txt) {
     backdrop-filter: blur(3px);
     -webkit-backdrop-filter: blur(3px); // For Safari support
     z-index: 1000; /* Ensure it's above other chat elements but below the actions */
+  }
+  
+  .reaaction-btns {
+     position:absolute;
+     display: flex;
+     justify-content: center;
+     align-content: center;
+     z-index: 1001;
+     padding: 10px;
+     
+     div {
+        font-size: 20px;
+        background: #ffffff;
+        border-radius: 50px;
+        padding: 3px 8px;
+        margin: 0 2px;
+         box-shadow: 1px 2px 8px rgba(0, 0, 0, 0.2); /* Stronger shadow for better visibility */
+         
+         
+         &:active {
+            transform: scale(0.8);
+            background: #ddd;
+         }
+     }
   }
 
   .chat-bubble-actions {

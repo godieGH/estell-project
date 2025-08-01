@@ -81,6 +81,7 @@
           <div style="position: relative">
             <ConvoThreads :currentConversation="currentConversation" />
             <div style="position: absolute; bottom: 0; right: 0; width: 100%">
+              
               <MessengerInput :currentConversation="currentConversation" />
             </div>
           </div>
