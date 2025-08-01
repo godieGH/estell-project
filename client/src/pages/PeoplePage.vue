@@ -133,6 +133,9 @@ async function fetchPeople(isInitialLoad = false) {
   }
 
   error.value = null // Clear previous errors
+  const maxRetries = 3 // Define the maximum number of retries
+  const retryDelay = 2000 // Define the delay between retries in milliseconds (2 seconds)
+  let attempt = 0 // Initialize attempt counter
 
   if (isInitialLoad) {
     initialLoading.value = true
@@ -143,34 +146,43 @@ async function fetchPeople(isInitialLoad = false) {
     loadingMore.value = true // Set loading state for "load more"
   }
 
-  try {
-    const { data, nextCursor, hasMore } = await getUsers(pagination.limit, pagination.cursor)
+  while (attempt <= maxRetries) {
+    try {
+      const { data, nextCursor, hasMore } = await getUsers(pagination.limit, pagination.cursor)
 
-    // Append new data to existing list
-    people.value.push(...data)
+      // Append new data to existing list
+      people.value.push(...data)
 
-    pagination.cursor = nextCursor // Update cursor
-    pagination.hasMore = hasMore // Update hasMore based on backend response
-  } catch (err) {
-    console.error('Error fetching people:', err)
-    error.value = err
-    /*$q.notify({
-      color: 'negative',
-      message: isInitialLoad ? 'Failed to load creators.' : 'Failed to load more creators.',
-      icon: 'report_problem',
-      position: 'top',
-      timeout: 3000,
-    })*/
-  } finally {
-    // Reset loading states in finally block
-    if (isInitialLoad) {
-      initialLoading.value = false
-    } else {
-      loadingMore.value = false
+      pagination.cursor = nextCursor // Update cursor
+      pagination.hasMore = hasMore // Update hasMore based on backend response
+
+      // Success, break out of the loop
+      break
+    } catch (err) {
+      console.error(`Error fetching people (Attempt ${attempt + 1}/${maxRetries + 1}):`, err)
+      error.value = err
+
+      // If this is the last attempt, notify the user.
+      if (attempt === maxRetries) {
+         // out some notifications here
+      } else {
+        // Wait before the next retry
+        await new Promise(resolve => setTimeout(resolve, retryDelay))
+      }
+    } finally {
+      attempt++
     }
-    retry.value = false
   }
+
+  // Reset loading states in finally block
+  if (isInitialLoad) {
+    initialLoading.value = false
+  } else {
+    loadingMore.value = false
+  }
+  retry.value = false
 }
+
 
 async function follow(id) {
   const user = people.value.find((u) => u.id === id)

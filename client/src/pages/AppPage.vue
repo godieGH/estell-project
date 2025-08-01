@@ -502,7 +502,7 @@ const hasMore = ref(true)
 const error = ref(false)
 const retry = ref(false)
 
-async function fetchPosts(isFirst = false) {
+async function fetchPosts(isFirst = false, retryCount = 0) {
   if (
     (isFirst && loading.value === false) ||
     (!isFirst && loadingMorePosts.value) ||
@@ -516,6 +516,7 @@ async function fetchPosts(isFirst = false) {
   } else {
     loadingMorePosts.value = true
   }
+
   try {
     const { data } = await getPosts(cursor.value, limit.value)
 
@@ -535,16 +536,28 @@ async function fetchPosts(isFirst = false) {
     } else {
       cursor.value = data.nextCursor
     }
-
-    //console.log(posts.value)
   } catch (err) {
     console.error('Error fetching posts:', err.message)
-    error.value = true
+    if (retryCount < 5) {
+      console.log(`Retrying... Attempt ${retryCount + 1}`)
+      await new Promise((resolve) => setTimeout(resolve, 2000)) // Wait for 2 seconds before retrying
+      await fetchPosts(isFirst, retryCount + 1)
+    } else {
+      console.error('Max retries reached. Giving up.')
+      $q.dialog({
+         message: "Server timeout! :)"
+      })
+      error.value = true
+    }
   } finally {
-    if (isFirst) loading.value = false
-    else loadingMorePosts.value = false
+    if (isFirst) {
+      loading.value = false
+    } else {
+      loadingMorePosts.value = false
+    }
   }
 }
+
 
 onMounted(async () => {
   EventBus.on('successfullyShared', bumpShareCount)

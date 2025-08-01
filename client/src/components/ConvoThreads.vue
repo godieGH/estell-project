@@ -389,7 +389,7 @@ watch(
 
 onMounted(async () => {
   isFirstMounted = true
-  imbMsg.initializeStore()
+  imbMsg.initializeStore($q)
   await fetchHistMsg()
 
   if (messageStore.queued.length > 0) {

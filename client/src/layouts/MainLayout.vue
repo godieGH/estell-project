@@ -398,7 +398,7 @@ const updateStatus = async () => {
 
 onMounted(async () => {
   // Check user authentication first
-  const needLogin = await userStore.initialize()
+  const needLogin = await userStore.initialize($q)
   if (needLogin) {
     router.push('/auth/login')
     return

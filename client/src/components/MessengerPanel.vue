@@ -273,42 +273,62 @@ watch(
   { immediate: true },
 )
 
-async function selectConversation(conversationId, type) {
-  showThreads.value = false
-  currentConversation.value = {}
+async function selectConversation(conversationId, type, retryCount = 0) {
+  // Set a maximum number of retries
+  const maxRetries = 5;
+
+  showThreads.value = false;
+  currentConversation.value = {};
   $q.loading.show({
     delay: 400,
     spinnerSize: 80,
     spinnerColor: 'white',
     backgroundColor: 'blue-grey-10',
-  })
+  });
+
   if (type === 'private' || type === 'group') {
     try {
-      const { data } = await api.post('api/open/chart', { conversationId, type })
-      //console.log(data)
+      const { data } = await api.post('api/open/chart', { conversationId, type });
       if (data) {
-        currentConversation.value = { ...data }
+        currentConversation.value = { ...data };
       }
       try {
-        const { data } = await api.get(`/api/get/current/convo/${conversationId}/user/to/display`)
-        //console.log(currentConversation.value, data)
-        currentUserToDisplay.value = { ...data }
-        $q.loading.hide()
-        showThreads.value = true
-        // Only trigger the animation on mobile screens
+        const { data } = await api.get(`/api/get/current/convo/${conversationId}/user/to/display`);
+        currentUserToDisplay.value = { ...data };
+        $q.loading.hide();
+        showThreads.value = true;
         if ($q.screen.lt.md) {
-          showChatOnMobile.value = true
+          showChatOnMobile.value = true;
         } else {
-          showChatOnMobile.value = false
+          showChatOnMobile.value = false;
         }
       } catch (err) {
-        console.log(err.message)
+        console.error('Error fetching user data:', err.message);
+        $q.loading.hide();
+        // Here, we can decide to retry if the first part succeeded
+        // but we'll stop the function to avoid an infinite loop
+        return; 
       }
     } catch (err) {
-      console.log(err.message)
+      console.error('Error opening chat:', err.message);
+      // Check if we have retries left
+      if (retryCount < maxRetries) {
+        console.log(`Retrying... Attempt ${retryCount + 1} of ${maxRetries}`);
+        // Add a delay before retrying to prevent overwhelming the server
+        await new Promise(resolve => setTimeout(resolve, 2000)); 
+        // Call the function again with an incremented retry count
+        selectConversation(conversationId, type, retryCount + 1);
+      } else {
+        console.error('Max retries reached. Unable to load conversation.');
+        $q.dialog({
+           message: "Can't open the conversation, connection error"
+        })
+        $q.loading.hide();
+      }
     }
   }
 }
+
 
 function hideChat() {
   showChatOnMobile.value = false
