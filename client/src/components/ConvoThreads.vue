@@ -13,22 +13,31 @@
       v-slot="{ item: message }"
       virtual-scroll-item-size="35"
     >
-       
       <div
         :ref="message.notReadByMe && !message.isMine ? 'notReadbyMeRef' : null"
         :key="message.id"
-        :style="message.id === swipingMessageId? swipeToReplyStyle: {}"
+        :style="message.id === swipingMessageId ? swipeToReplyStyle : {}"
         @touchstart="startSwipe"
         @touchend="restoreSwipe"
-        @touchmove= "(event) => {swipeToReply(event, message.id)}"
+        @touchmove="
+          (event) => {
+            swipeToReply(event, message)
+          }
+        "
         :data-message-id="message.id"
-        v-touch-hold="(event) => {showBubbleAction(event, message)}"
+        v-touch-hold="
+          (event) => {
+            showBubbleAction(event, message)
+          }
+        "
       >
-          <div v-if="message.id === swipingMessageId && panX > 60" style="position: absolute; top: 35%; font-size: 20px;">
-             <q-icon name="reply"/>
-          </div>
-          
-          
+        <div
+          v-if="message.id === swipingMessageId && panX > 60"
+          style="position: absolute; top: 35%; font-size: 20px"
+        >
+          <q-icon name="reply" />
+        </div>
+
         <div
           v-if="message.type === 'date_separator'"
           class="message-system text-center text-caption text-grey-6"
@@ -74,19 +83,19 @@
                   message.isMine
                     ? message.reply_to_message.isMine
                       ? 'Yourself'
-                      : message.reply_to_message.sender_name
+                      : message.reply_to_message.sender.username
                     : message.reply_to_message.isMine
-                      ? message.reply_to_message.sender_name
+                      ? message.reply_to_message.sender.username
                       : 'Yourself'
                 }}
               </div>
               <div class="text-caption text-grey-7 ellipsis">
                 {{
-                  message.reply_to_message.content_text ||
-                  (message.reply_to_message.content_attachment_type
-                    ? `[${message.reply_to_message.content_attachment_type}]`
+                  message.reply_to_message.content.text ||
+                  (message.reply_to_message.content.attachment_type
+                    ? `[${message.reply_to_message.content.attachment_type}]`
                     : '') ||
-                  (message.reply_to_message.content_voice_note ? '[Voice Note]' : '')
+                  (message.reply_to_message.content.voice_note ? '[Voice Note]' : '')
                 }}
               </div>
             </div>
@@ -246,9 +255,14 @@
               <span v-if="message.is_deleted && !message.isMine">
                 <span class="material-icons">do_not_disturb</span> This message was deleted.
               </span>
-              <span style="white-space: pre-wrap" v-else>
+              <span class="ellipsis-12-lines" style="white-space: pre-wrap" v-else>
                 {{ message.content.text }}
               </span>
+                <span v-if="message.hasLongText">
+                   <q-btn flat dense @click="readMore(message.id)">
+                      <a href="javascript:void(0)" class="scale-down text-teal" style="text-decoration: none; font-weight: 400; font-size: 12px;">Read more...</a>
+                   </q-btn>
+                </span>
             </div>
 
             <div
@@ -288,53 +302,56 @@
       </div>
     </q-virtual-scroll>
 
+    
+    
     <div
       v-if="showGodownBtn"
       class="go-down-btn"
       style="position: absolute; bottom: 70px; right: 10px; z-index: 999999"
     >
       <q-btn
-        @click="() => { scrollTo(); showBubbleActionContainer = false}"
+        @click="() => {scrollTo(); showBubbleActionContainer = false}"
         class="q-py-md q-ma-xs"
         style="font-size: 12px; color: #333"
         :style="{
-            background: newMsgAvailable?'green':null
-            }"
+          background: newMsgAvailable ? 'green' : null,
+        }"
         rounded
         icon="fas fa-chevron-down"
       />
     </div>
-    
-    
-    
-    
-    
-<transition name="chat-bubble-fade">
-  <div v-if="showBubbleActionContainer" class="chat-bubble-action-container" >
-    <div class="blur-overlay" @click="showBubbleActionContainer = false"></div>
-    
-    <div class="reaaction-btns" :style="bubbleReactionsStyle">
-       <div v-for="emoji in reactionsEmojis" :key="emoji">{{emoji}}</div>
-       <div><i class="text-dark material-icons">add</i></div>
-    </div>
-    <div class="chat-bubble-actions" :style="bubbleActionContainerStyle">
-      <div>Reply to</div>
-      <div v-if="selectedMsg.isMine">Delete</div>
-      <div v-else>Hide</div>
-      <div v-if="selectedMsg.isMine && (Date.now() - (new Date(selectedMsg?.updated_at)).getTime()) < 120000 || (Date.now() - parseInt(selectedMsg.sent_at) < 120000 )">Edit</div>
-      <div v-if="selectedMsg.content.text" @click="copyText(selectedMsg.content.text)">Copy text</div>
-      <div>Share</div>
-    </div>
-  </div>
-</transition>
 
+    <transition name="chat-bubble-fade">
+      <div v-if="showBubbleActionContainer" class="chat-bubble-action-container">
+        <div class="blur-overlay" @click="showBubbleActionContainer = false"></div>
 
-
-
-    
-    
-    
-    
+        <div class="reaaction-btns" :style="bubbleReactionsStyle">
+          <div v-for="emoji in reactionsEmojis" :key="emoji">{{ emoji }}</div>
+          <div><i class="text-dark material-icons">add</i></div>
+        </div>
+        <div class="chat-bubble-actions" :style="bubbleActionContainerStyle">
+          <div @click="() => {
+             emit('msgToreply', selectedMsg)
+             showBubbleActionContainer = false
+          }">Reply to</div>
+          <div v-if="selectedMsg.isMine">Delete</div>
+          <div v-else>Hide</div>
+          <div
+            v-if="
+              (selectedMsg.isMine &&
+                Date.now() - new Date(selectedMsg?.updated_at).getTime() < 120000) ||
+              Date.now() - parseInt(selectedMsg.sent_at) < 120000
+            "
+          >
+            Edit
+          </div>
+          <div v-if="selectedMsg.content.text" @click="copyText(selectedMsg.content.text)">
+            Copy text
+          </div>
+          <div>Share</div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 <script setup>
@@ -348,12 +365,12 @@ import { useMessageStore } from 'stores/messageStore'
 import { useMsgStore } from 'stores/messages'
 import { formatFileSize, getAvatarSrc } from 'src/composables/formater'
 
-
 const messageStore = useMessageStore()
 const imbMsg = useMsgStore()
 const props = defineProps({
   currentConversation: Object,
 })
+const emit = defineEmits(['msgToreply'])
 const userStore = useUserStore()
 const $q = useQuasar()
 
@@ -381,8 +398,14 @@ function checkReadBy(readByArray) {
 async function fetchHistMsg() {
   try {
     const { data } = await api.get(`/api/get/msgs/${props.currentConversation.id}/`)
-    messages.value = [...data]
-    //console.log(data)
+    const refinedData = data.map(msg => {
+       return {
+          ...msg,
+          hasLongText: msg.content.text?.length > 500 || msg.content.text?.split('\n').length > 12
+       }
+    })
+    
+    messages.value = [...refinedData]
   } catch (err) {
     console.error(err.message)
   }
@@ -429,9 +452,11 @@ onMounted(async () => {
         if (Number.isInteger(readMsgIndex)) {
           //messages.value[readMsg].read_by.push(userStore.user.id)
           try {
-            await api.post(`/api/read/msg/${messages.value[readMsgIndex].conversation_id}/${entry.target.dataset.messageId}/`)
+            await api.post(
+              `/api/read/msg/${messages.value[readMsgIndex].conversation_id}/${entry.target.dataset.messageId}/`,
+            )
             socket.emit('read_msg', { msgId: readMsg.id, convoId: readMsg.conversation_id })
-            newMsgAvailable.value = false;
+            newMsgAvailable.value = false
             observer.unobserve(entry.target)
           } catch (e) {
             console.error(e.message)
@@ -443,16 +468,13 @@ onMounted(async () => {
       threshold: 0.1,
     },
   )
-  
-  if(messages.value.findIndex(msg => !msg.read_by.includes(userStore.user.id)) > 0) {
-     scrollTo()
+
+  if (messages.value.findIndex((msg) => !msg.read_by.includes(userStore.user.id)) > 0) {
+    scrollTo()
   } else {
-     scrollTo()
+    scrollTo()
   }
-
-  
 })
-
 
 async function recieveNew(msg) {
   if (msg.conversation_id !== props.currentConversation.id) return
@@ -620,27 +642,30 @@ const seekVoiceNote = (event, messageId) => {
   }
 }
 
-onUnmounted(async() => {
+onUnmounted(async () => {
   if (currentAudio.value) {
     currentAudio.value.pause()
     currentAudio.value = null
   }
-  
+
   const newMsgStart = groupedMessages.value.findIndex((msg) => {
-        return (
-          msg.id === unreadSeparatorMsgId.value
-        )
+    return msg.id === unreadSeparatorMsgId.value
+  })
+  if (newMsgStart >= 0 && !newMsgAvailable.value) {
+    try {
+      await api.post(
+        `/api/read/msg/${props.currentConversation.id}/${messages.value[messages.value.length - 1].id}/`,
+      )
+      socket.emit('read_msg', {
+        msgId: messages.value[messages.value.length - 1].id,
+        convoId: props.currentConversation.id,
       })
-  if(newMsgStart >= 0 && !newMsgAvailable.value) {
-     try {
-        await api.post(`/api/read/msg/${props.currentConversation.id}/${messages.value[messages.value.length - 1].id}/`)
-         socket.emit('read_msg', { msgId: messages.value[messages.value.length - 1].id, convoId: props.currentConversation.id })
-         newMsgAvailable.value = false;
-     } catch(e) {
-        console.error(e.massage)
-     }
+      newMsgAvailable.value = false
+    } catch (e) {
+      console.error(e.massage)
+    }
   }
-  
+
   socket.off('new_msg', recieveNew)
   socket.off('someone_raed_msg', someone_raed_msg)
   if (observer) {
@@ -649,8 +674,7 @@ onUnmounted(async() => {
   }
 })
 
-
-const unreadSeparatorMsgId = ref("123456")
+const unreadSeparatorMsgId = ref('123456')
 const groupedMessages = computed(() => {
   if (!messages.value || messages.value.length === 0) {
     return []
@@ -691,6 +715,7 @@ const groupedMessages = computed(() => {
     }
 
     currentMessage.isMine = currentMessage.sender_id === userStore.user.id
+
     
     if (!currentMessage.isMine && i === sortedMessages.length - 1) {
       currentMessage.notReadByMe =
@@ -720,16 +745,13 @@ const groupedMessages = computed(() => {
   return processed
 })
 
-
 const scrollTo = () => {
   if (virtualScroll.value && groupedMessages.value.length > 0) {
     if (isFirstMounted) {
       const x = groupedMessages.value.findIndex((msg) => {
-        return (
-          msg.id === unreadSeparatorMsgId.value
-        )
+        return msg.id === unreadSeparatorMsgId.value
       })
-      
+
       if (x >= 0) {
         virtualScroll.value.scrollTo(x, 0)
         isFirstMounted = false
@@ -746,22 +768,26 @@ watch(
   groupedMessages,
   () => {
     nextTick(() => {
-      if(groupedMessages.value[groupedMessages.value.length - 1].isMine) {
-         scrollTo()
+      if (groupedMessages.value[groupedMessages.value.length - 1].isMine) {
+        scrollTo()
       }
-      if(!groupedMessages.value[groupedMessages.value.length - 1].isMine && getDistanceFromBottom() < 200) {
-         scrollTo()
+      if (
+        !groupedMessages.value[groupedMessages.value.length - 1].isMine &&
+        getDistanceFromBottom() < 200
+      ) {
+        scrollTo()
       }
-    
-       if(getDistanceFromBottom() > 250 && !groupedMessages.value[groupedMessages.value.length - 1].isMine) {
-          newMsgAvailable.value = true;
-       }
+
+      if (
+        getDistanceFromBottom() > 250 &&
+        !groupedMessages.value[groupedMessages.value.length - 1].isMine
+      ) {
+        newMsgAvailable.value = true
+      }
     })
   },
   { deep: true },
 )
-  
-
 
 const getIconForFileType = (metadata) => {
   if (!metadata) {
@@ -950,26 +976,27 @@ async function handleScroll() {
     showGodownBtn.value = false
     newMsgAvailable.value = false
   }
-  
-  
-  if(getDistanceFromBottom() < 50) {
-     const newMsgStart = groupedMessages.value.findIndex((msg) => {
-        return (
-          msg.id === unreadSeparatorMsgId.value
+
+  if (getDistanceFromBottom() < 50) {
+    const newMsgStart = groupedMessages.value.findIndex((msg) => {
+      return msg.id === unreadSeparatorMsgId.value
+    })
+    if (newMsgStart >= 0 && !newMsgAvailable.value) {
+      try {
+        await api.post(
+          `/api/read/msg/${props.currentConversation.id}/${messages.value[messages.value.length - 1].id}/`,
         )
-      })
-     if(newMsgStart >= 0 && !newMsgAvailable.value) {
-        try {
-           await api.post(`/api/read/msg/${props.currentConversation.id}/${messages.value[messages.value.length - 1].id}/`)
-            socket.emit('read_msg', { msgId: messages.value[messages.value.length - 1].id, convoId: props.currentConversation.id })
-            newMsgAvailable.value = false;
-        } catch(e) {
-           console.error(e.massage)
-        }
-     }
+        socket.emit('read_msg', {
+          msgId: messages.value[messages.value.length - 1].id,
+          convoId: props.currentConversation.id,
+        })
+        newMsgAvailable.value = false
+      } catch (e) {
+        console.error(e.massage)
+      }
+    }
   }
 }
-
 
 const showBubbleActionContainer = ref(false)
 const bubbleActionContainerStyle = ref({})
@@ -979,149 +1006,150 @@ const selectedMsg = ref(null)
 
 function showBubbleAction(event, msg) {
   selectedMsg.value = msg
- 
-  const messageBubbleElement = event.evt.touches[0].target.closest('.message-bubble');
-  if (!messageBubbleElement) return;
 
-  const containerRect = chatContainer.value.getBoundingClientRect();
-  const bubbleRect = messageBubbleElement.getBoundingClientRect();
+  const messageBubbleElement = event.evt.touches[0].target.closest('.message-bubble')
+  if (!messageBubbleElement) return
+
+  const containerRect = chatContainer.value.getBoundingClientRect()
+  const bubbleRect = messageBubbleElement.getBoundingClientRect()
 
   // Calculate desired position relative to the chatContainer
-  let top = bubbleRect.top - containerRect.top;
-  let left = bubbleRect.left - containerRect.left;
+  let top = bubbleRect.top - containerRect.top
+  let left = bubbleRect.left - containerRect.left
 
   // Define the dimensions of the action menu (approximate, or measure precisely)
-  const menuWidth = 200; // Approximate width of your action menu
-  const menuHeight = 250; // Approximate height of your action menu (5 actions * ~40px per action + padding)
+  const menuWidth = 200 // Approximate width of your action menu
+  const menuHeight = 250 // Approximate height of your action menu (5 actions * ~40px per action + padding)
 
   // Adjust position to keep menu within chatContainer bounds
   // Check if menu overflows to the right
   if (left + menuWidth > containerRect.width) {
-    left = containerRect.width - menuWidth - 10; // 10px padding from right
+    left = containerRect.width - menuWidth - 10 // 10px padding from right
   }
   // Check if menu overflows to the left (e.g., if bubble is very far right)
   if (left < 0) {
-    left = 10; // 10px padding from left
+    left = 10 // 10px padding from left
   }
 
   // Check if menu overflows downwards
   if (top + menuHeight > containerRect.height) {
     // If it overflows, try to position it above the bubble
-    top = bubbleRect.bottom - containerRect.top - menuHeight;
+    top = bubbleRect.bottom - containerRect.top - menuHeight
     // Ensure it doesn't go above the top of the container
     if (top < 10) {
-      top = 10; // 10px padding from top
+      top = 10 // 10px padding from top
     }
   }
 
   // If the bubble is near the top and menu overflows upwards
   if (top < 0) {
-      top = 10; // Set to a minimum padding from the top
+    top = 10 // Set to a minimum padding from the top
   }
-
 
   bubbleActionContainerStyle.value = {
     top: `${top}px`,
     left: `${left}px`,
-  };
-  
-  
-  if(selectedMsg.value.isMine) {
-      bubbleReactionsStyle.value = {
-     top: `${top>70?(top-70):top+170}px`,
-     right: `15px`
-  };
-  } else {
-      bubbleReactionsStyle.value = {
-     top: `${top>70?(top-70):top+170}px`,
-     left: `15px`
-  };
   }
-  showBubbleActionContainer.value = true;
+
+  if (selectedMsg.value.isMine) {
+    bubbleReactionsStyle.value = {
+      top: `${top > 70 ? top - 70 : top + 170}px`,
+      right: `15px`,
+    }
+  } else {
+    bubbleReactionsStyle.value = {
+      top: `${top > 70 ? top - 70 : top + 170}px`,
+      left: `15px`,
+    }
+  }
+  showBubbleActionContainer.value = true
 }
 
-
-
-const swipingMessageId = ref(null);
-const panX = ref(0);
-const startX = ref(0);
-const startY = ref(0);
+const swipingMessageId = ref(null)
+const swipingMessage = ref(null)
+const panX = ref(0)
+const startX = ref(0)
+const startY = ref(0)
 
 const swipeToReplyStyle = computed(() => {
-    return {
-        transform: `translateX(${panX.value<60?panX.value:50}px)`,
-        transition: 'transform 0.2s ease-out'
-    };
-});
+  return {
+    transform: `translateX(${panX.value < 60 ? panX.value : 50}px)`,
+    transition: 'transform 0.2s ease-out',
+  }
+})
 
 function startSwipe(e) {
-   if (!e.touches || e.touches.length === 0) return;
-   startX.value = e.touches[0].clientX;
-   startY.value = e.touches[0].clientY;
+  if (!e.touches || e.touches.length === 0) return
+  startX.value = e.touches[0].clientX
+  startY.value = e.touches[0].clientY
 }
 
-let hasVibrated = false;
+let hasVibrated = false
 
+function swipeToReply(e, msg) {
+  if (msg.sender_type !== 'user') {
+    return
+  }
+  swipingMessageId.value = msg.id
+  swipingMessage.value = msg
 
-function swipeToReply(e, msgId) {
-   swipingMessageId.value = msgId;
+  if (!e.touches || e.touches.length === 0) return
 
-   if (!e.touches || e.touches.length === 0) return;
+  const currentX = e.touches[0].clientX
+  const currentY = e.touches[0].clientY
 
-   const currentX = e.touches[0].clientX;
-   const currentY = e.touches[0].clientY;
+  const deltaX = currentX - startX.value
+  const deltaY = currentY - startY.value
 
-   const deltaX = currentX - startX.value;
-   const deltaY = currentY - startY.value;
+  if (Math.abs(deltaY) > Math.abs(deltaX)) {
+    panX.value = 0
+    return
+  }
 
-   if (Math.abs(deltaY) > Math.abs(deltaX)) {
-      panX.value = 0;
-      return;
-   }
+  if (deltaX > 0) {
+    panX.value = deltaX
 
-   if (deltaX > 0) {
-      panX.value = deltaX;
-
-      if (panX.value >= 60 && !hasVibrated) {
-         navigator.vibrate(100);
-         hasVibrated = true;
-      }
-   } else {
-      panX.value = 0;
-   }
+    if (panX.value >= 60 && !hasVibrated) {
+      navigator.vibrate(100)
+      hasVibrated = true
+    }
+  } else {
+    panX.value = 0
+  }
 }
-
-
 
 function restoreSwipe() {
-   if(panX.value >= 60) {
-      //console.log('passed')
-   }
-   panX.value = 0
-   hasVibrated = false
-   swipingMessageId.value = null
+  if (panX.value >= 60) {
+    emit('msgToreply', swipingMessage.value)
+  }
+  panX.value = 0
+  hasVibrated = false
+  swipingMessageId.value = null
+  swipingMessage.value = null
 }
-
-
 
 async function copyText(txt) {
-   try {
-      await navigator.clipboard.writeText(txt)
-   
-      $q.notify({message: "message text copied to clipboard"})
-   } catch(e) {
-      $q.notify({message: e.message})
-   } finally {
-      showBubbleActionContainer.value = false
-      selectedMsg.value = null
-   }
+  try {
+    await navigator.clipboard.writeText(txt)
+
+    $q.notify({ message: 'message text copied to clipboard' })
+  } catch (e) {
+    $q.notify({ message: e.message })
+  } finally {
+    showBubbleActionContainer.value = false
+    selectedMsg.value = null
+  }
 }
 
 
 
-
-
-
+function readMore(msgId) {
+   const msgFound = messages.value.find(msg => {
+      return msg.id === msgId
+   })
+   void msgFound
+   //logic to open a pop model to view the long text
+}
 </script>
 
 <style scoped lang="scss">
@@ -1373,29 +1401,28 @@ async function copyText(txt) {
     -webkit-backdrop-filter: blur(3px); // For Safari support
     z-index: 1000; /* Ensure it's above other chat elements but below the actions */
   }
-  
+
   .reaaction-btns {
-     position:absolute;
-     display: flex;
-     justify-content: center;
-     align-content: center;
-     z-index: 1001;
-     padding: 10px;
-     
-     div {
-        font-size: 20px;
-        background: #ffffff;
-        border-radius: 50px;
-        padding: 3px 8px;
-        margin: 0 2px;
-         box-shadow: 1px 2px 8px rgba(0, 0, 0, 0.2); /* Stronger shadow for better visibility */
-         
-         
-         &:active {
-            transform: scale(0.8);
-            background: #ddd;
-         }
-     }
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    align-content: center;
+    z-index: 1001;
+    padding: 10px;
+
+    div {
+      font-size: 20px;
+      background: #ffffff;
+      border-radius: 50px;
+      padding: 3px 8px;
+      margin: 0 2px;
+      box-shadow: 1px 2px 8px rgba(0, 0, 0, 0.2); /* Stronger shadow for better visibility */
+
+      &:active {
+        transform: scale(0.8);
+        background: #ddd;
+      }
+    }
   }
 
   .chat-bubble-actions {
@@ -1410,7 +1437,7 @@ async function copyText(txt) {
     div {
       padding: 8px 50px 8px 20px;
       color: black;
-      cursor: pointer; 
+      cursor: pointer;
 
       &:active {
         background: #e4e4e4;
@@ -1421,7 +1448,9 @@ async function copyText(txt) {
 
 .chat-bubble-fade-enter-active,
 .chat-bubble-fade-leave-active {
-  transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+  transition:
+    opacity 0.2s ease-out,
+    transform 0.2s cubic-bezier(0.68, -0.55, 0.27, 1.55);
 }
 
 .chat-bubble-fade-enter-from,
@@ -1436,4 +1465,16 @@ async function copyText(txt) {
   transform: scale(1);
 }
 
+.ellipsis-12-lines {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 15; /* This is the key property */
+  white-space: normal;
+}
+
+
+.scale-down:active {
+   transform: scale(0.9);
+}
 </style>

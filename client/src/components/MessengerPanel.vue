@@ -39,7 +39,8 @@
               <i @click="hideChat()" class="q-pr-sm fas fa-chevron-left"></i>
               <q-skeleton v-if="!currentUserToDisplay" type="circle" size="45px" />
               <q-avatar v-else size="45px">
-                <img :src="getAvatarSrc(currentConversation.groupAvatar)" />
+                <img v-if="currentConversation.type === 'group'" :src="getAvatarSrc(currentConversation.groupAvatar)" />
+                <img v-else :src="getAvatarSrc(currentUserToDisplay.avatar)" />
               </q-avatar>
               <q-skeleton
                 v-if="!currentUserToDisplay"
@@ -60,7 +61,8 @@
             <div style="display: flex; align-items: center">
               <q-skeleton v-if="!currentUserToDisplay" type="circle" size="45px" />
               <q-avatar v-else size="45px">
-                <img :src="getAvatarSrc(currentConversation.groupAvatar)" />
+                <img v-if="currentConversation.type === 'group'" :src="getAvatarSrc(currentConversation.groupAvatar)" />
+                <img v-else :src="getAvatarSrc(currentUserToDisplay.avatar)" />
               </q-avatar>
               <q-skeleton
                 v-if="!currentUserToDisplay"
@@ -79,10 +81,56 @@
           </div>
 
           <div style="position: relative">
-            <ConvoThreads :currentConversation="currentConversation" />
+            <ConvoThreads :currentConversation="currentConversation" @msgToreply="loadMsgToReply" />
             <div style="position: absolute; bottom: 0; right: 0; width: 100%">
               
-              <MessengerInput :currentConversation="currentConversation" />
+              
+              <transition name="reply-bubble" appear>
+                <div v-if="msgToreply" class="reply-bubble">
+                  <div class="text-caption text-blue-8 text-bold">
+                    Replying to
+                    {{ msgToreply.isMine ? 'Yourself' : msgToreply.sender.username }}
+                    <q-icon
+                      name="close"
+                      @click="msgToreply = null"
+                      style="color: #333; position: absolute; right: 10px; font-size: 25px"
+                    />
+                  </div>
+                  <div class="text-caption text-grey-7">
+                    <span v-if="msgToreply.content.text && !msgToreply.content.attachment" class="ellipsis-4-lines">{{ msgToreply.content.text }}</span>
+
+                    <div
+                      v-else-if="msgToreply.content.attachment_type === 'image'"
+                     
+                      class="attachment-preview"
+                    >
+                      <img
+                        :src="msgToreply.content.attachment"
+                        alt="Image Preview"
+                        class="image-preview"
+                      />
+                      <span v-if="msgToreply.content.text" class="ellipsis-4-lines">{{ msgToreply.content.text }}</span>
+                      <span v-else>{{msgToreply.content.attachment_metadata.mimetype}} | {{formatFileSize(msgToreply.content.attachment_metadata.size)}}</span>
+                    </div>
+
+                    <div v-else-if="msgToreply.content.voice_note" class="voice-note">
+                      <q-icon name="mic" class="mic-icon" />
+                      <span>Voice Note</span>
+                    </div>
+
+                    <div v-else-if="msgToreply.content.attachment_type">
+                      <q-icon
+                        :name="getIconForAttachment(msgToreply.content.attachment_type)"
+                        class="attachment-icon"
+                      />
+                      <span>{{ getAttachmentLabel(msgToreply.content.attachment_type) }}</span>
+                      <span v-if="msgToreply.content.text" class="ellipsis-4-lines">{{msgToreply.content.text}}</span>
+                    </div>
+                  </div>
+                </div>
+              </transition>
+
+              <MessengerInput :currentConversation="currentConversation" :messageToReplyTo="msgToreply" @discardTeplyTo="() => {msgToreply = null}" />
             </div>
           </div>
         </div>
@@ -225,7 +273,7 @@
 import ConversationList from './ConversationList.vue'
 import ConvoThreads from './ConvoThreads.vue'
 import MessengerInput from './MessengerInput.vue'
-import { getAvatarSrc } from 'src/composables/formater'
+import { getAvatarSrc, formatFileSize } from 'src/composables/formater'
 import { ref, watch, onUnmounted } from 'vue'
 import { useQuasar } from 'quasar'
 import { api } from 'boot/axios'
@@ -252,7 +300,7 @@ watch(currentConversation, async (newConvo) => {
       const { data } = await api.get(`/api/get/current/convo/${newConvo.id}/user/to/display`)
       currentUserToDisplay.value = { ...data }
     } catch (err) {
-      console.log(err.message)
+      console.error(err.message)
     }
   }
 
@@ -276,60 +324,59 @@ watch(
 
 async function selectConversation(conversationId, type, retryCount = 0) {
   // Set a maximum number of retries
-  const maxRetries = 5;
+  const maxRetries = 5
 
-  showThreads.value = false;
-  currentConversation.value = {};
+  showThreads.value = false
+  currentConversation.value = {}
   $q.loading.show({
     delay: 400,
     spinnerSize: 80,
     spinnerColor: 'white',
     backgroundColor: 'blue-grey-10',
-  });
+  })
 
   if (type === 'private' || type === 'group') {
     try {
-      const { data } = await api.post('api/open/chart', { conversationId, type });
+      const { data } = await api.post('api/open/chart', { conversationId, type })
       if (data) {
-        currentConversation.value = { ...data };
+        currentConversation.value = { ...data }
       }
       try {
-        const { data } = await api.get(`/api/get/current/convo/${conversationId}/user/to/display`);
-        currentUserToDisplay.value = { ...data };
-        $q.loading.hide();
-        showThreads.value = true;
+        const { data } = await api.get(`/api/get/current/convo/${conversationId}/user/to/display`)
+        currentUserToDisplay.value = { ...data }
+        $q.loading.hide()
+        showThreads.value = true
         if ($q.screen.lt.md) {
-          showChatOnMobile.value = true;
+          showChatOnMobile.value = true
         } else {
-          showChatOnMobile.value = false;
+          showChatOnMobile.value = false
         }
       } catch (err) {
-        console.error('Error fetching user data:', err.message);
-        $q.loading.hide();
+        console.error('Error fetching user data:', err.message)
+        $q.loading.hide()
         // Here, we can decide to retry if the first part succeeded
         // but we'll stop the function to avoid an infinite loop
-        return; 
+        return
       }
     } catch (err) {
-      console.error('Error opening chat:', err.message);
+      console.error('Error opening chat:', err.message)
       // Check if we have retries left
       if (retryCount < maxRetries) {
-        console.log(`Retrying... Attempt ${retryCount + 1} of ${maxRetries}`);
+        console.log(`Retrying... Attempt ${retryCount + 1} of ${maxRetries}`)
         // Add a delay before retrying to prevent overwhelming the server
-        await new Promise(resolve => setTimeout(resolve, 2000)); 
+        await new Promise((resolve) => setTimeout(resolve, 2000))
         // Call the function again with an incremented retry count
-        selectConversation(conversationId, type, retryCount + 1);
+        selectConversation(conversationId, type, retryCount + 1)
       } else {
-        console.error('Max retries reached. Unable to load conversation.');
+        console.error('Max retries reached. Unable to load conversation.')
         $q.dialog({
-           message: "Can't open the conversation, connection error"
+          message: "Can't open the conversation, connection error",
         })
-        $q.loading.hide();
+        $q.loading.hide()
       }
     }
   }
 }
-
 
 function hideChat() {
   showChatOnMobile.value = false
@@ -385,7 +432,7 @@ async function fetchAllPeopleToDM() {
       people.value = [...AllPeopleToDM.value]
     }
   } catch (err) {
-    console.log(err.message)
+    console.error(err.message)
   }
 }
 
@@ -488,7 +535,7 @@ async function startChat(type) {
       showThreads.value = true
     }
   } catch (err) {
-    console.log(err.message)
+    console.error(err.message)
     $q.notify({
       type: 'negative',
       message: 'Something went wrong, Server not Responding...',
@@ -500,6 +547,34 @@ async function startChat(type) {
 onUnmounted(() => {
   clearTimeout(searchTimeId)
 })
+
+const msgToreply = ref(null)
+
+function loadMsgToReply(msg) {
+  if (msg && msg.sender_type === 'user') {
+    msgToreply.value = msg
+  }
+}
+
+const getIconForAttachment = (type) => {
+  const icons = {
+    video: 'videocam',
+    link: 'link',
+    location: 'location_on',
+    // Add more types as needed
+  }
+  return icons[type] || 'attach_file'
+}
+
+const getAttachmentLabel = (type) => {
+  const labels = {
+    video: 'Video',
+    link: 'Link',
+    location: 'Location',
+    // Add more types as needed
+  }
+  return labels[type] || type
+}
 </script>
 
 <style scoped lang="scss">
@@ -665,4 +740,62 @@ onUnmounted(() => {
     transform: translateX(0) !important; /* Ensure no transform on desktop */
   }
 }
+
+/* Reply Bubble Styles */
+.reply-bubble {
+  background-color: #f5f5f5; /* Slightly darker background for the reply block */
+  border-left: 4px solid #1976d2; /* Blue border on the left */
+  border-radius: 10px 10px 0 0;
+  padding: 5px 8px;
+  margin: 20px 5px 0 5px ;
+  font-size: 0.85em;
+  box-shadow: 2px -1px 5px #1e1e1e;
+
+  .text-bold {
+    font-weight: 600;
+  }
+}
+
+.reply-bubble-enter-active,
+.reply-bubble-leave-active {
+  transition:
+    transform 0.3s cubic-bezier(0.25, 0.8, 0.5, 1),
+    opacity 0.3s cubic-bezier(0.25, 0.8, 0.5, 1);
+}
+
+.reply-bubble-enter-from,
+.reply-bubble-leave-to {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+.reply-bubble-enter-to,
+.reply-bubble-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.image-preview {
+  width: 100px; /* Small dimensions */
+  height: auto;
+  margin-right: 8px;
+  border-radius: 4px;
+}
+.attachment-preview {
+  display: flex;
+  align-items: center;
+}
+.mic-icon,
+.attachment-icon {
+  margin-right: 4px;
+}
+
+.ellipsis-4-lines {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4; /* This is the key property */
+  white-space: normal;
+}
+
 </style>

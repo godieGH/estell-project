@@ -164,10 +164,10 @@ async function fetchPeople(isInitialLoad = false) {
 
       // If this is the last attempt, notify the user.
       if (attempt === maxRetries) {
-         // out some notifications here
+        // out some notifications here
       } else {
         // Wait before the next retry
-        await new Promise(resolve => setTimeout(resolve, retryDelay))
+        await new Promise((resolve) => setTimeout(resolve, retryDelay))
       }
     } finally {
       attempt++
@@ -182,7 +182,6 @@ async function fetchPeople(isInitialLoad = false) {
   }
   retry.value = false
 }
-
 
 async function follow(id) {
   const user = people.value.find((u) => u.id === id)

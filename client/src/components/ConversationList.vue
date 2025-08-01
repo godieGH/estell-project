@@ -26,39 +26,29 @@
     </div>
     <div class="conversation-list-content-area">
       <div v-if="initialLoading">
-         <q-card
-          v-for="n in 10"
-          :key="n"
-          flat
-          class="q-mb-sm q-hoverable"
-          style="cursor: pointer"
-        >
-          <q-card-section
-            class="row items-center no-wrap q-py-sm"
-          >
+        <q-card v-for="n in 10" :key="n" flat class="q-mb-sm q-hoverable" style="cursor: pointer">
+          <q-card-section class="row items-center no-wrap q-py-sm">
             <q-item-section avatar>
-              <q-avatar  size="48px">
-                <q-skeleton type='circle' size='48px'/>
+              <q-avatar size="48px">
+                <q-skeleton type="circle" size="48px" />
               </q-avatar>
             </q-item-section>
 
             <q-item-section>
               <q-item-label>
-                <q-skeleton type='text' width="40%"/>
+                <q-skeleton type="text" width="40%" />
               </q-item-label>
               <q-item-label class="q-mt-xs">
-               <q-skeleton type="text" width="60%"/>
+                <q-skeleton type="text" width="60%" />
               </q-item-label>
             </q-item-section>
 
             <q-item-section side top>
               <span style="font-size: 10px" class="q-mb-xs">
-                <q-skeleton type="text" width="50px"/>
+                <q-skeleton type="text" width="50px" />
               </span>
-              <span
-                style="border-radius: 50px; background: green;"
-              >
-                 <q-skeleton type="circle" size="20px"/>
+              <span style="border-radius: 50px; background: green">
+                <q-skeleton type="circle" size="20px" />
               </span>
             </q-item-section>
           </q-card-section>
@@ -89,14 +79,14 @@
             <q-item-section>
               <q-item-label>
                 <span
-                v-if="convo.type === 'private'"
+                  v-if="convo.type === 'private'"
                   class="text-grey"
                   style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis"
                 >
                   {{ convo.participants?.[0]?.user?.name || 'Unknown User' }}
                 </span>
                 <span
-                v-else-if="convo.type === 'group'"
+                  v-else-if="convo.type === 'group'"
                   class="text-grey"
                   style="white-space: nowrap; overflow-x: hidden; text-overflow: ellipsis"
                 >
@@ -237,13 +227,12 @@ async function fetchConversation() {
     } catch (err) {
       console.log(err.message)
     }
-  } else if(activeTab.value === 'Groups') {
-     let type = 'Groups'
-     
-     try {
-        const { data } = await api.get(`/api/get/all/user/conversations/${type}`)
-        
-        
+  } else if (activeTab.value === 'Groups') {
+    let type = 'Groups'
+
+    try {
+      const { data } = await api.get(`/api/get/all/user/conversations/${type}`)
+
       const newData = await Promise.all(
         data.map(async (a) => {
           if (a.messages?.[0]?.content?.voice_note) {
@@ -257,10 +246,9 @@ async function fetchConversation() {
 
       //console.log(newData)
       myConversations.value = [...newData]
-        
-     } catch (e) {
-        console.error(e.message)
-     }
+    } catch (e) {
+      console.error(e.message)
+    }
   }
 }
 

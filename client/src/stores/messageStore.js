@@ -72,7 +72,8 @@ export const useMessageStore = defineStore('messageStore', {
         _attachmentFile: obj.content.attachment?.file || null, // Store the actual File/Blob object
         _voiceNoteBlob: obj.content.fullAudioBlob || null, // Store the actual Blob object
         sent_at: obj.sent_at,
-        reply_to_message: null,
+        reply_to_message: toRaw(obj.reply_to_message) || null,
+        reply_to: toRaw(obj.reply_to) || null,
         isMine: true,
         read_by: [],
         queued: true,
@@ -224,18 +225,13 @@ export const useMessageStore = defineStore('messageStore', {
             throw new Error(`Failed to send message to server: ${response.error}`)
           }
         } catch (error) {
-          console.error(
-            `Attempt ${retries + 1} failed to send queued message ${msg.id}:`,
-            error,
-          )
+          console.error(`Attempt ${retries + 1} failed to send queued message ${msg.id}:`, error)
           retries++
           if (retries < MAX_RETRIES) {
             // Wait before retrying
             await delay(RETRY_DELAY)
           } else {
-            console.error(
-              `All ${MAX_RETRIES} attempts failed for message ${msg.id}. Giving up.`,
-            )
+            console.error(`All ${MAX_RETRIES} attempts failed for message ${msg.id}. Giving up.`)
             // Reset upload progress on final failure
             this.currentUpload.type = null
             this.currentUpload.progress = null

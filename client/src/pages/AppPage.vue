@@ -545,7 +545,7 @@ async function fetchPosts(isFirst = false, retryCount = 0) {
     } else {
       console.error('Max retries reached. Giving up.')
       $q.dialog({
-         message: "Server timeout! :)"
+        message: 'Server timeout! :)',
       })
       error.value = true
     }
@@ -557,7 +557,6 @@ async function fetchPosts(isFirst = false, retryCount = 0) {
     }
   }
 }
-
 
 onMounted(async () => {
   EventBus.on('successfullyShared', bumpShareCount)

@@ -4,8 +4,6 @@
     class="chat-input-area"
     ref="chatInputAreaRef"
   >
-     
-     
     <transition name="mic-fade" appear>
       <button
         @touchstart="startRecording"
@@ -133,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed, toRaw} from 'vue'
 import { useQuasar } from 'quasar'
 import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
@@ -141,8 +139,10 @@ import { EventBus } from 'boot/event-bus'
 
 const userStore = useUserStore()
 const messageStore = useMessageStore()
+const emit = defineEmits(['discardTeplyTo'])
 const props = defineProps({
   currentConversation: Object,
+  messageToReplyTo: Object,
 })
 const readyToSendMsg = ref(false)
 
@@ -375,9 +375,7 @@ const startRecording = (e) => {
     startX.value = e.touches[0].clientX
   }
 
-
-
-   playAdioBeep('sound-1-mic.m4a', true)
+  playAdioBeep('sound-1-mic.m4a', true)
 
   waitABitId.value = setTimeout(() => {
     if (e.touches && e.touches.length > 0 && e.touches[0].clientX === startX.value) {
@@ -389,15 +387,13 @@ const startRecording = (e) => {
       }, 1000)
       mediaRecorder = null
       fullAudioBlob.value = null
-  
+
       startRecordingAudio()
     }
   }, 200)
 }
 
 const startRecordingAudio = () => {
-  
-  
   navigator.mediaDevices
     .getUserMedia({ audio: true })
     .then(function (stream) {
@@ -462,7 +458,6 @@ const cancelRecording = () => {
 
   mediaRecorder = null
   fullAudioBlob.value = null
-  
 }
 
 const stopRecording = () => {
@@ -491,7 +486,7 @@ const stopRecording = () => {
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop()
       }
-      
+
       playAdioBeep('sound-2-mic.m4a', true)
 
       mediaRecorder.onstop = function () {
@@ -525,14 +520,14 @@ const stopRecording = () => {
 }
 
 function playAdioBeep(src, vibrate) {
-   const audio = new Audio()
-   audio.src = src
-      
-   audio.play()
-   
-   if(vibrate) {
-      navigator.vibrate(100)
-   }
+  const audio = new Audio()
+  audio.src = src
+
+  audio.play()
+
+  if (vibrate) {
+    navigator.vibrate(100)
+  }
 }
 
 onUnmounted(() => {
@@ -555,6 +550,31 @@ async function sendMsg() {
     attachment: hasAttachment.value ? { ...attachment.value } : null,
     fullAudioBlob: fullAudioBlob.value,
   }
+  
+ 
+const { messageToReplyTo } = props;
+let reply_to_message_refined = null
+
+if(messageToReplyTo) {
+   reply_to_message_refined = {
+  id: toRaw(messageToReplyTo.id),
+  content: {
+    text: toRaw(messageToReplyTo.content.text),
+    attachment: toRaw(messageToReplyTo.content.attachment),
+    attachment_type: toRaw(messageToReplyTo.content.attachment_type),
+    voice_note: toRaw(messageToReplyTo.content.voice_note)
+  },
+  conversation_id: toRaw(messageToReplyTo.conversation_id),
+  isMine: toRaw(messageToReplyTo.isMine),
+  read_by: toRaw(messageToReplyTo.read_by),
+  sender: {
+    avatar: toRaw(messageToReplyTo.sender.avatar),
+    id: toRaw(messageToReplyTo.sender.id),
+    username: toRaw(messageToReplyTo.sender.username)
+  }
+}
+}
+
 
   const messageObj = {
     conversation: props.currentConversation,
@@ -565,6 +585,8 @@ async function sendMsg() {
     isMine: true,
     read_by: [],
     queued: true,
+    read_to: props.messageToReplyTo?.id || null,
+    reply_to_message: reply_to_message_refined  || null,
   }
 
   if (messageStore.queueMsg(messageObj)) {
@@ -572,6 +594,7 @@ async function sendMsg() {
     hasTyped.value = false
     discardAttachment()
     fullAudioBlob.value = null
+    emit('discardTeplyTo')
   }
   await messageStore.processAllQueuedMessages()
 

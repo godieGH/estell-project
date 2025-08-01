@@ -1651,6 +1651,18 @@ router.get("/get/msgs/:convo_id", authenticateAccess, async (req, res) => {
           as: "sender",
           attributes: ["id", "username", "avatar"],
         },
+        {
+          model: Message, // This is the Message model itself
+          as: 'replyTo',
+          attributes: ['id', 'conversation_id', 'sender_id', 'content', 'sent_at', 'is_deleted'], // Select the attributes you need
+          include: [
+            {
+              model: User,
+              as: 'sender', // The sender of the replied-to message
+              attributes: ['id', 'username', 'avatar'],
+            },
+          ],
+        },
       ],
       order: [["sent_at", "ASC"]],
     });
@@ -1667,7 +1679,7 @@ router.get("/get/msgs/:convo_id", authenticateAccess, async (req, res) => {
           include: [
             {
               model: User,
-              as: "user", // <--- THIS IS THE FIX: Specify the 'as' alias here
+              as: "user",
               attributes: ["id"],
             },
           ],
@@ -1681,7 +1693,6 @@ router.get("/get/msgs/:convo_id", authenticateAccess, async (req, res) => {
 
       read_statuses_for_convo.forEach((rs) => {
         const participantReadAt = rs.read_at;
-        // Now, access the User through the 'user' alias:
         const correspondingUserId =
           rs.Participant && rs.Participant.user ? rs.Participant.user.id : null;
 
@@ -1706,6 +1717,7 @@ router.get("/get/msgs/:convo_id", authenticateAccess, async (req, res) => {
         isMine: msg.sender_id === userId,
         is_deleted: msg.is_deleted,
         is_edited: msg.is_edited,
+        reply_to_message: msg.replyTo || null, // Include the fully-loaded replyTo object
         read_by: readers,
       };
     });
