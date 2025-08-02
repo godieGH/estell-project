@@ -15,7 +15,7 @@
         class="icon-button microphone"
         :class="{ 'mic-btn-on-rec': isRecording }"
         :style="micBtnStyle"
-        v-show="!(hasTyped || hasAttachment || editMode)"
+        v-show="!(hasTyped || hasAttachment) && !editMode"
       >
         <i
           style="font-size: 25px"
@@ -159,12 +159,15 @@ const props = defineProps({
 
 const editMode = ref(false)
 watch(() => props.messageToEdit, (newVal) => {
-   if(newVal && newVal.content.text) {
+   if(newVal != null) {
       message.value = toRaw(newVal.content.text)
       editMode.value = true
+      autoGrowTextarea()
    } else {
       editMode.value = false
-      message.value = ""
+      message.value = null
+      autoGrowTextarea()
+      hasTyped.value = false
    }
 })
 
@@ -177,7 +180,7 @@ onMounted((a = props.currentConversation) => {
   }
 })
 
-const message = ref('')
+const message = ref(null)
 const isFabMenuOpen = ref(false)
 const fabMenuStyle = reactive({})
 const attachment = ref({
@@ -614,19 +617,20 @@ if(messageToReplyTo) {
   }
 
   if (messageStore.queueMsg(messageObj)) {
-    message.value = ''
+    message.value = null
+    autoGrowTextarea()
     hasTyped.value = false
     discardAttachment()
     fullAudioBlob.value = null
     emit('discardTeplyTo')
   }
   await messageStore.processAllQueuedMessages()
-
-  autoGrowTextarea()
+  
 }
 
 async function sendEdit() {
-   if(message.value === props.messageToEdit) return
+   if(message.value === props.messageToEdit || message.value.length === 0) return
+   const textarea = textareaRef.value
    
    try {
        await api.post(`/api/msg/${props.messageToEdit.id}/edit`, {editText: message.value})
@@ -634,6 +638,8 @@ async function sendEdit() {
    } catch (e) {
       $q.dialog({message: e.message})
       console.error(e.message)
+   } finally {
+      textarea.style.height = "0"
    }
 }
 

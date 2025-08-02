@@ -1849,6 +1849,7 @@ router.post('/msg/:msgId/edit', authenticateAccess, async (req, res) => {
          text: editText
       }
       msg.update({
+         is_edited: true,
          content: contentToEdit
       })
       res.status(200).json(msg)

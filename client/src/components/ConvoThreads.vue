@@ -279,12 +279,13 @@
                 :class="message.isMine ? 'text-right' : 'text-left'"
                 style="font-size: 10px"
               >
+                <span v-if="message.is_edited && message.isMine" style="margin-right: 10px;">edited</span>
+                
                 <span
                   v-if="message.isMine && message.queued"
                   class="q-pr-xs material-icons"
                   style="font-size: 14px"
-                  >schedule</span
-                >
+                  >schedule</span>
                 <span
                   v-if="
                     message.isMine &&
@@ -304,6 +305,8 @@
                   >done</span
                 >
                 {{ formatTime(message.sent_at) }}
+                
+                <span v-if="message.is_edited && !message.isMine">edited</span>
               </div>
             </template>
           </div>
@@ -358,9 +361,9 @@
              <div v-else>Hide</div>
              <div
                v-if="
-                 (selectedMsg.isMine &&
+                 (selectedMsg.isMine && (
                    Date.now() - new Date(selectedMsg?.updated_at).getTime() < 120000) ||
-                 Date.now() - parseInt(selectedMsg.sent_at) < 120000
+                 Date.now() - parseInt(selectedMsg.sent_at) < 120000) && !selectedMsg.content.voice_note
                "
                
                @click="editMsg()"
