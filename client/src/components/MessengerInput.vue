@@ -1,6 +1,9 @@
 <template>
   <div
-    :style="{ background: isRecording ? 'transparent' : '' }"
+    :style="{ 
+      background: isRecording ? 'transparent' : '',
+      zIndex: editMode?'1003':''
+      }"
     class="chat-input-area"
     ref="chatInputAreaRef"
   >
@@ -12,7 +15,7 @@
         class="icon-button microphone"
         :class="{ 'mic-btn-on-rec': isRecording }"
         :style="micBtnStyle"
-        v-show="!(hasTyped || hasAttachment)"
+        v-show="!(hasTyped || hasAttachment || editMode)"
       >
         <i
           style="font-size: 25px"
@@ -79,14 +82,20 @@
             }
           "
           ref="attachmentButtonRef"
-          v-if="!hasAttachment"
+          v-if="!hasAttachment && !editMode"
         >
           <i :class="readyToSendMsg ? '' : 'text-grey'" class="material-icons">attachment</i>
         </button>
       </div>
-      <button :class="{ 'text-green': hasTyped || hasAttachment }" class="send-button">
+      
+      <button v-if="!editMode" :class="{ 'text-green': hasTyped || hasAttachment }" class="send-button">
         <i :class="readyToSendMsg ? '' : 'text-grey'" class="material-icons" @click="sendMsg"
           >send</i
+        >
+      </button>
+      <button v-else :class="{ 'text-green': hasTyped }" class="send-button">
+        <i :class="readyToSendMsg && messageToEdit?.content?.text !== message ? '' : 'text-grey'" class="material-icons" @click="sendEdit"
+          >check</i
         >
       </button>
     </div>
@@ -131,11 +140,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, computed, toRaw} from 'vue'
+import { watch, ref, reactive, onMounted, onUnmounted, nextTick, computed, toRaw} from 'vue'
 import { useQuasar } from 'quasar'
 import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
 import { EventBus } from 'boot/event-bus'
+import { api } from 'boot/axios'
 
 const userStore = useUserStore()
 const messageStore = useMessageStore()
@@ -143,7 +153,21 @@ const emit = defineEmits(['discardTeplyTo'])
 const props = defineProps({
   currentConversation: Object,
   messageToReplyTo: Object,
+  messageToEdit: Object,
 })
+
+
+const editMode = ref(false)
+watch(() => props.messageToEdit, (newVal) => {
+   if(newVal && newVal.content.text) {
+      message.value = toRaw(newVal.content.text)
+      editMode.value = true
+   } else {
+      editMode.value = false
+      message.value = ""
+   }
+})
+
 const readyToSendMsg = ref(false)
 
 onMounted((a = props.currentConversation) => {
@@ -599,6 +623,18 @@ if(messageToReplyTo) {
   await messageStore.processAllQueuedMessages()
 
   autoGrowTextarea()
+}
+
+async function sendEdit() {
+   if(message.value === props.messageToEdit) return
+   
+   try {
+       await api.post(`/api/msg/${props.messageToEdit.id}/edit`, {editText: message.value})
+       EventBus.emit('sent-edit')
+   } catch (e) {
+      $q.dialog({message: e.message})
+      console.error(e.message)
+   }
 }
 
 function handleAreaFocus() {

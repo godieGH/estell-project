@@ -81,7 +81,7 @@
           </div>
 
           <div style="position: relative">
-            <ConvoThreads :currentConversation="currentConversation" @msgToreply="loadMsgToReply" />
+            <ConvoThreads :currentConversation="currentConversation" @editMode="editMode" @msgToreply="loadMsgToReply" />
             <div style="position: absolute; bottom: 0; right: 0; width: 100%">
               
               
@@ -130,7 +130,7 @@
                 </div>
               </transition>
 
-              <MessengerInput :currentConversation="currentConversation" :messageToReplyTo="msgToreply" @discardTeplyTo="() => {msgToreply = null}" />
+              <MessengerInput :messageToEdit="msgToEdit" :currentConversation="currentConversation" :messageToReplyTo="msgToreply" @discardTeplyTo="() => {msgToreply = null}" />
             </div>
           </div>
         </div>
@@ -321,6 +321,12 @@ watch(
   },
   { immediate: true },
 )
+
+const msgToEdit = ref(null)
+function editMode(msg) {
+   msgToEdit.value = msg
+   //console.log(msgToEdit.value)
+}
 
 async function selectConversation(conversationId, type, retryCount = 0) {
   // Set a maximum number of retries

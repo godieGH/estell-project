@@ -1790,4 +1790,94 @@ router.post(
   },
 );
 
+router.post('/msg/:msgId/delete', authenticateAccess, async (req, res) => {
+   try {
+      const msg = await Message.findByPk(req.params.msgId)
+      if(!msg) {
+         return res.status(404).json('Message not found...')
+      }
+      if(msg) {
+         if(msg.sender_id != req.userId) {
+            return res.status(403).json('This message can not be deleted by you ')
+         }
+         msg.update({
+            is_deleted: true
+         })
+      }
+      res.status(200).json('ok')
+   } catch (e) {
+      console.error(e.message)
+      res.status(500).json({message: e.message})
+   }
+})
+
+router.post('/msg/:msgId/restore', authenticateAccess, async (req, res) => {
+   try {
+      const msg = await Message.findByPk(req.params.msgId)
+      if(!msg) {
+         return res.status(404).json('Message not found...')
+      }
+      if(msg) {
+         if(msg.sender_id != req.userId) {
+            return res.status(403).json('This message can not be deleted by you ')
+         }
+         await msg.update({
+            is_deleted: false
+         })
+      }
+      res.status(200).json('ok')
+   } catch (e) {
+      console.error(e.message)
+      res.status(500).json({message: e.message})
+   }
+})
+
+router.post('/msg/:msgId/edit', authenticateAccess, async (req, res) => {
+   try {
+      const { editText } = req.body
+      const msg = await Message.findByPk(req.params.msgId)
+      
+      if(!msg) {
+         return res.status(404).json("Msg is not found")
+      }
+      if(msg.sender_id !== req.userId) {
+         return res.status(403).json('Not allowed to edit this message')
+      }
+      
+      const contentToEdit = {
+         ...msg.content,
+         text: editText
+      }
+      msg.update({
+         content: contentToEdit
+      })
+      res.status(200).json(msg)
+   } catch (e) {
+      console.error(e); // Log the full error object for better debugging
+      res.status(500).json({ message: 'An internal server error occurred' });
+   }
+});
+
+
+router.delete('/msg/:msgId/hardDelete/', authenticateAccess, async (req, res) => {
+   try {
+      const msg = await Message.findByPk(req.params.msgId)
+      if(!msg) {
+         return res.status(404).json('Message not found...')
+      }
+      if(msg) {
+         if(msg.sender_id != req.userId) {
+            return res.status(403).json('This message can not be hard deleted by you ')
+         }
+         await msg.destroy()
+      }
+      res.status(200).json('ok')
+   } catch (e) {
+      console.error(e.message)
+      res.status(500).json({message: e.message})
+   }
+})
+
+
+
 module.exports = router;

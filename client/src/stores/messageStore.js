@@ -6,12 +6,6 @@ import { useUserStore } from 'stores/user'
 import Dexie from 'dexie'
 
 const auth = useUserStore().token
-const MAX_RETRIES = 3
-const RETRY_DELAY = 2000 // 2 seconds
-
-// Awaitable setTimeout function
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 // Initialize Dexie database
 const db = new Dexie('MessageQueueDB')
 db.version(1).stores({
@@ -104,141 +98,133 @@ export const useMessageStore = defineStore('messageStore', {
     },
 
     async sendQueued(msg) {
-      let retries = 0
-      while (retries < MAX_RETRIES) {
-        try {
-          let uploadedUrl = null
-          let uploadType = null
-          let metadata = null
+      try {
+        let uploadedUrl = null
+        let uploadType = null
+        let metadata = null
 
-          // Reset upload progress before attempting a new upload
-          this.currentUpload.type = null
-          this.currentUpload.progress = null
-          this.currentUpload.messageClientId = null
+        // Reset upload progress before attempting a new upload
+        this.currentUpload.type = null
+        this.currentUpload.progress = null
+        this.currentUpload.messageClientId = null
 
-          if (msg._attachmentFile || msg._voiceNoteBlob) {
-            const formData = new FormData()
-            let uploadRoute = ''
-            formData.append('conversation_id', msg.conversation_id)
-            this.currentUpload.messageClientId = msg.id
+        if (msg._attachmentFile || msg._voiceNoteBlob) {
+          const formData = new FormData()
+          let uploadRoute = ''
+          formData.append('conversation_id', msg.conversation_id)
+          this.currentUpload.messageClientId = msg.id
 
-            if (msg._attachmentFile) {
-              formData.append('file', msg._attachmentFile)
-              uploadType = msg.content.attachment_type
-              switch (msg.content.attachment_type) {
-                case 'image':
-                  uploadRoute = 'api/upload/image'
-                  break
-                case 'video':
-                  uploadRoute = 'api/upload/video'
-                  break
-                case 'file':
-                  uploadRoute = 'api/upload/file'
-                  break
-              }
-            } else if (msg._voiceNoteBlob) {
-              formData.append('audio', msg._voiceNoteBlob)
-              uploadType = 'voice_note'
-              uploadRoute = 'api/upload/voice-note'
+          if (msg._attachmentFile) {
+            formData.append('file', msg._attachmentFile)
+            uploadType = msg.content.attachment_type
+            switch (msg.content.attachment_type) {
+              case 'image':
+                uploadRoute = 'api/upload/image'
+                break
+              case 'video':
+                uploadRoute = 'api/upload/video'
+                break
+              case 'file':
+                uploadRoute = 'api/upload/file'
+                break
             }
-
-            if (uploadRoute) {
-              this.currentUpload.type = uploadType
-              const uploadResponse = await api.post(uploadRoute, formData, {
-                onUploadProgress: (progressEvent) => {
-                  this.currentUpload.progress = Math.round(
-                    (progressEvent.loaded * 100) / progressEvent.total,
-                  )
-                },
-              })
-              uploadedUrl = uploadResponse.data.url
-              metadata = uploadResponse.data.attachment_metadata || null
-
-              const i = this.queued.findIndex((qMsg) => qMsg.id === msg.id)
-              if (i !== -1) {
-                if (uploadType !== 'voice_note') {
-                  this.queued[i].content.attachment = uploadedUrl
-                  this.queued[i].content.attachment_metadata = metadata
-                } else {
-                  this.queued[i].content.voice_note = uploadedUrl
-                }
-              }
-            }
-          }
-          // Reset upload progress after a successful upload
-          this.currentUpload.type = null
-          this.currentUpload.progress = null
-          this.currentUpload.messageClientId = null
-
-          const messageToSend = {
-            conversation_id: msg.conversation_id,
-            sender_id: msg.sender_id,
-            content: {
-              text: msg.content.text,
-              attachment: uploadedUrl && msg.content.attachment_type !== null ? uploadedUrl : null,
-              attachment_type:
-                uploadedUrl && msg.content.attachment_type !== null
-                  ? msg.content.attachment_type
-                  : null,
-              attachment_metadata: metadata,
-              voice_note: uploadedUrl && uploadType === 'voice_note' ? uploadedUrl : null,
-            },
-            sent_at: msg.sent_at,
-            reply_to_message: msg.reply_to_message,
-            client_message_id: msg.id,
+          } else if (msg._voiceNoteBlob) {
+            formData.append('audio', msg._voiceNoteBlob)
+            uploadType = 'voice_note'
+            uploadRoute = 'api/upload/voice-note'
           }
 
-          const response = await new Promise((resolve) => {
-            socket.emit('sendMessage', messageToSend, auth, (res) => {
-              resolve(res)
+          if (uploadRoute) {
+            this.currentUpload.type = uploadType
+            const uploadResponse = await api.post(uploadRoute, formData, {
+              onUploadProgress: (progressEvent) => {
+                this.currentUpload.progress = Math.round(
+                  (progressEvent.loaded * 100) / progressEvent.total,
+                )
+              },
             })
-          })
+            uploadedUrl = uploadResponse.data.url
+            metadata = uploadResponse.data.attachment_metadata || null
 
-          if (response.success) {
-            const index = this.queued.findIndex((qMsg) => qMsg.id === msg.id)
-            if (index !== -1) {
-              // Revoke Object URLs to free memory
-              if (
-                this.queued[index].content.attachment &&
-                this.queued[index].content.attachment.startsWith('blob:')
-              ) {
-                URL.revokeObjectURL(this.queued[index].content.attachment)
+            const i = this.queued.findIndex((qMsg) => qMsg.id === msg.id)
+            if (i !== -1) {
+              if (uploadType !== 'voice_note') {
+                this.queued[i].content.attachment = uploadedUrl
+                this.queued[i].content.attachment_metadata = metadata
+              } else {
+                this.queued[i].content.voice_note = uploadedUrl
               }
-              if (
-                this.queued[index].content.voice_note &&
-                this.queued[index].content.voice_note.startsWith('blob:')
-              ) {
-                URL.revokeObjectURL(this.queued[index].content.voice_note)
-              }
-              this.queued[index].queued = false
-              this.queued.splice(index, 1)
             }
-            // Remove from IndexedDB on successful send
-            try {
-              await db.queuedMessages.delete(msg.id)
-              //console.log(`Message ${msg.id} successfully sent and removed from IndexedDB.`)
-            } catch (dbError) {
-              console.error('Error removing message from IndexedDB:', dbError)
-            }
-            return true // Message sent, exit the function
-          } else {
-            throw new Error(`Failed to send message to server: ${response.error}`)
-          }
-        } catch (error) {
-          console.error(`Attempt ${retries + 1} failed to send queued message ${msg.id}:`, error)
-          retries++
-          if (retries < MAX_RETRIES) {
-            // Wait before retrying
-            await delay(RETRY_DELAY)
-          } else {
-            console.error(`All ${MAX_RETRIES} attempts failed for message ${msg.id}. Giving up.`)
-            // Reset upload progress on final failure
-            this.currentUpload.type = null
-            this.currentUpload.progress = null
-            this.currentUpload.messageClientId = null
-            throw error // Re-throw the error to be caught by the caller
           }
         }
+        // Reset upload progress after a successful upload
+        this.currentUpload.type = null
+        this.currentUpload.progress = null
+        this.currentUpload.messageClientId = null
+
+        const messageToSend = {
+          conversation_id: msg.conversation_id,
+          sender_id: msg.sender_id,
+          content: {
+            text: msg.content.text,
+            attachment: uploadedUrl && msg.content.attachment_type !== null ? uploadedUrl : null,
+            attachment_type:
+              uploadedUrl && msg.content.attachment_type !== null
+                ? msg.content.attachment_type
+                : null,
+            attachment_metadata: metadata,
+            voice_note: uploadedUrl && uploadType === 'voice_note' ? uploadedUrl : null,
+          },
+          sent_at: msg.sent_at,
+          reply_to_message: msg.reply_to_message,
+          client_message_id: msg.id,
+        }
+
+        const response = await new Promise((resolve) => {
+          socket.emit('sendMessage', messageToSend, auth, (res) => {
+            resolve(res)
+          })
+        })
+
+        if (response.success) {
+          const index = this.queued.findIndex((qMsg) => qMsg.id === msg.id)
+          if (index !== -1) {
+            // Revoke Object URLs to free memory
+            if (
+              this.queued[index].content.attachment &&
+              this.queued[index].content.attachment.startsWith('blob:')
+            ) {
+              URL.revokeObjectURL(this.queued[index].content.attachment)
+            }
+            if (
+              this.queued[index].content.voice_note &&
+              this.queued[index].content.voice_note.startsWith('blob:')
+            ) {
+              URL.revokeObjectURL(this.queued[index].content.voice_note)
+            }
+            this.queued[index].queued = false
+            this.queued.splice(index, 1)
+          }
+          // Remove from IndexedDB on successful send
+          try {
+            await db.queuedMessages.delete(msg.id)
+            
+            //console.log(`Message ${msg.id} successfully sent and removed from IndexedDB.`)
+          } catch (dbError) {
+            console.error('Error removing message from IndexedDB:', dbError)
+          }
+           //this.queued[index].id = response.serverMsgId
+          return true // Message sent, exit the function
+        } else {
+          throw new Error(`Failed to send message to server: ${response.error}`)
+        }
+      } catch (error) {
+        console.error(`Failed to send queued message ${msg.id}:`, error)
+        // Reset upload progress on final failure
+        this.currentUpload.type = null
+        this.currentUpload.progress = null
+        this.currentUpload.messageClientId = null
+        throw error // Re-throw the error to be caught by the caller
       }
     },
     async processAllQueuedMessages($q = null) {
@@ -248,7 +234,7 @@ export const useMessageStore = defineStore('messageStore', {
           try {
             await this.sendQueued(msg)
           } catch (error) {
-            // Handle the final failure after all retries are exhausted
+            // Handle the final failure after the single attempt
             if ($q) {
               $q.dialog({
                 title: 'Message Not Sent',
@@ -256,7 +242,7 @@ export const useMessageStore = defineStore('messageStore', {
                 persistent: true,
               })
             }
-            console.error('Failed to process message after all retries:', msg.id, error)
+            console.error('Failed to process message:', msg.id, error)
           }
         }
       }

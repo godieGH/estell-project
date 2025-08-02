@@ -16,7 +16,7 @@
       <div
         :ref="message.notReadByMe && !message.isMine ? 'notReadbyMeRef' : null"
         :key="message.id"
-        :style="message.id === swipingMessageId ? swipeToReplyStyle : {}"
+        :style="message.id === swipingMessageId && !message.is_deleted ? swipeToReplyStyle : {}"
         @touchstart="startSwipe"
         @touchend="restoreSwipe"
         @touchmove="
@@ -30,7 +30,7 @@
             showBubbleAction(event, message)
           }
         "
-        :class="scrolledTo?.state && message.id === scrolledTo?.id ?'highlight-msg':''"
+        :class="scrolledTo?.state && message.id === scrolledTo?.id ? 'highlight-msg' : ''"
       >
         <div
           v-if="message.id === swipingMessageId && panX > 60"
@@ -77,285 +77,322 @@
             :class="message.isMine ? 'message-bubble message-mine' : 'message-bubble message-other'"
             class="q-pa-sm q-ma-xs"
           >
-            <div v-if="message.reply_to_message" class="reply-bubble" @click="scrollToMsg(message.reply_to_message.id)">
-              <div class="text-caption text-blue-8 text-bold" >
-                Replying to
-                {{
-                  message.isMine
-                    ? message.reply_to_message.isMine
-                      ? 'Yourself'
-                      : message.reply_to_message.sender.username
-                    : message.reply_to_message.isMine
-                      ? message.reply_to_message.sender.username
-                      : 'Yourself'
-                }}
-              </div>
-              <div class="text-caption text-grey-7 ellipsis">
-                {{
-                  message.reply_to_message.content.text ||
-                  (message.reply_to_message.content.attachment_type
-                    ? `[${message.reply_to_message.content.attachment_type}]`
-                    : '') ||
-                  (message.reply_to_message.content.voice_note ? '[Voice Note]' : '')
-                }}
-              </div>
+            <div v-if="message.is_deleted" class="message-text-content text-grey" style="display: flex; align-items: center; font-style: italic;">
+              <span class="material-icons q-mr-xs" style="font-size: 16px;">do_not_disturb</span>
+              <span>This message was deleted.</span>
             </div>
 
-            <div
-              v-if="message.content.attachment_type === 'image'"
-              style="position: relative"
-              :style="{
-                width: '220px',
-                height: `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width} )`,
-              }"
-              class="attachment-top"
-            >
-              <div v-if="message.queued && message.isMine" class="attachment-queued-overlay">
-                <q-btn flat size="30px" style="color: white" loading></q-btn>
-              </div>
-              <q-img :src="message.content.attachment" class="message-image" />
-            </div>
-
-            <div
-              v-if="message.content.attachment_type === 'video'"
-              style="position: relative"
-              :style="{
-                width: '220px',
-                height: `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width})`,
-              }"
-              class="attachment-top"
-            >
-              <div v-if="message.queued && message.isMine" class="attachment-queued-overlay">
-                <q-btn flat size="30px" style="color: white" loading></q-btn>
-              </div>
-              <CustomVideoPlayer :src="message.content.attachment" />
-            </div>
-
-            <div
-              v-if="message.content.attachment_type === 'file'"
-              class="file-type-attachment attachment-top"
-            >
-              <div class="file-icon">
-                <q-icon
-                  :name="getIconForFileType(message.content.attachment_metadata)"
-                  :style="{
-                    'font-size': '25px',
-                    color: getIconColorForFileType(message.content.attachment_metadata),
-                  }"
-                  class="icons"
-                />
-              </div>
-              <div class="file-meta">
-                <div class="file-name">
+            <template v-else>
+              <div
+                v-if="message.reply_to_message"
+                class="reply-bubble"
+                @click="scrollToMsg(message.reply_to_message.id)"
+              >
+                <div class="text-caption text-blue-8 text-bold">
+                  Replying to
                   {{
-                    message.content.attachment?.split('/')[
-                      message.content.attachment?.split('/').length - 1
-                    ]
+                    message.isMine
+                      ? message.reply_to_message.isMine
+                        ? 'Yourself'
+                        : message.reply_to_message.sender.username
+                      : message.reply_to_message.isMine
+                        ? message.reply_to_message.sender.username
+                        : 'Yourself'
                   }}
                 </div>
-                <div class="meta">
-                  <span>
-                    {{
-                      message.content.attachment_metadata?.pages
-                        ? `${message.content.attachment_metadata?.pages} pages • `
-                        : message.content.attachment_metadata?.duration
-                          ? `${Math.trunc(message.content.attachment_metadata?.duration)}s • `
-                          : '   '
-                    }}
-                  </span>
+                <div class="text-caption text-grey-7 ellipsis">
+                  {{
+                    message.reply_to_message.content.text ||
+                    (message.reply_to_message.content.attachment_type
+                      ? `[${message.reply_to_message.content.attachment_type}]`
+                      : '') ||
+                    (message.reply_to_message.content.voice_note ? '[Voice Note]' : '')
+                  }}
+                </div>
+              </div>
 
-                  <span>{{ formatFileSize(message.content.attachment_metadata?.size) }} • </span>
-                  <span>
+              <div
+                v-if="message.content.attachment_type === 'image'"
+                style="position: relative"
+                :style="{
+                  width: '220px',
+                  height: `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width} )`,
+                }"
+                class="attachment-top"
+              >
+                <div v-if="message.queued && message.isMine" class="attachment-queued-overlay">
+                  <q-btn flat size="30px" style="color: white" loading></q-btn>
+                </div>
+                <q-img :src="message.content.attachment" class="message-image" />
+              </div>
+
+              <div
+                v-if="message.content.attachment_type === 'video'"
+                style="position: relative"
+                :style="{
+                  width: '220px',
+                  height: `calc(220px * ${message.content.attachment_metadata?.height} / ${message.content.attachment_metadata?.width})`,
+                }"
+                class="attachment-top"
+              >
+                <div v-if="message.queued && message.isMine" class="attachment-queued-overlay">
+                  <q-btn flat size="30px" style="color: white" loading></q-btn>
+                </div>
+                <CustomVideoPlayer :src="message.content.attachment" />
+              </div>
+
+              <div
+                v-if="message.content.attachment_type === 'file'"
+                class="file-type-attachment attachment-top"
+              >
+                <div class="file-icon">
+                  <q-icon
+                    :name="getIconForFileType(message.content.attachment_metadata)"
+                    :style="{
+                      'font-size': '25px',
+                      color: getIconColorForFileType(message.content.attachment_metadata),
+                    }"
+                    class="icons"
+                  />
+                </div>
+                <div class="file-meta">
+                  <div class="file-name">
                     {{
-                      message.content.attachment_metadata?.type === 'document' ||
-                      message.content.attachment_metadata?.type === 'application'
-                        ? message.content.attachment_metadata?.subtype
-                        : message.content.attachment_metadata?.type === 'video' ||
-                            message.content.attachment_metadata?.type === 'image' ||
-                            message.content.attachment_metadata?.type === 'audio' ||
-                            message.content.attachment_metadata?.type === 'text'
-                          ? message.content.attachment_metadata?.mime_type.split('/')[1]
-                          : ''
+                      message.content.attachment?.split('/')[
+                        message.content.attachment?.split('/').length - 1
+                      ]
                     }}
+                  </div>
+                  <div class="meta">
+                    <span>
+                      {{
+                        message.content.attachment_metadata?.pages
+                          ? `${message.content.attachment_metadata?.pages} pages • `
+                          : message.content.attachment_metadata?.duration
+                            ? `${Math.trunc(message.content.attachment_metadata?.duration)}s • `
+                            : '   '
+                      }}
+                    </span>
+
+                    <span>{{ formatFileSize(message.content.attachment_metadata?.size) }} • </span>
+                    <span>
+                      {{
+                        message.content.attachment_metadata?.type === 'document' ||
+                        message.content.attachment_metadata?.type === 'application'
+                          ? message.content.attachment_metadata?.subtype
+                          : message.content.attachment_metadata?.type === 'video' ||
+                              message.content.attachment_metadata?.type === 'image' ||
+                              message.content.attachment_metadata?.type === 'audio' ||
+                              message.content.attachment_metadata?.type === 'text'
+                            ? message.content.attachment_metadata?.mime_type.split('/')[1]
+                            : ''
+                      }}
+                    </span>
+                  </div>
+                </div>
+                <div class="download-icon">
+                  <span v-if="message.isMine && message.queued">
+                    <q-icon name="file_upload" style="font-size: 20px" class="icons" />
+                  </span>
+                  <span v-else-if="!message.isMine">
+                    <template v-if="downloadingMessageId === message.id">
+                      <video src="~assets/download-anim.mp4" autoplay loop style="width: 28px" />
+                    </template>
+                    <template v-else>
+                      <q-icon
+                        name="file_download"
+                        style="font-size: 20px; cursor: pointer"
+                        class="icons"
+                        @click="
+                          downloadFile(
+                            message.id,
+                            message.content.attachment,
+                            message.content.attachment?.split('/').pop(),
+                          )
+                        "
+                      />
+                    </template>
+                  </span>
+                  <span v-else>
+                    <q-icon name="done" style="font-size: 20px" class="icons" />
                   </span>
                 </div>
               </div>
-              <div class="download-icon">
-                <span v-if="message.isMine && message.queued">
-                  <q-icon name="file_upload" style="font-size: 20px" class="icons" />
-                </span>
-                <span v-else-if="!message.isMine">
-                  <template v-if="downloadingMessageId === message.id">
-                    <video src="~assets/download-anim.mp4" autoplay loop style="width: 28px" />
-                  </template>
-                  <template v-else>
-                    <q-icon
-                      name="file_download"
-                      style="font-size: 20px; cursor: pointer"
-                      class="icons"
-                      @click="
-                        downloadFile(
-                          message.id,
-                          message.content.attachment,
-                          message.content.attachment?.split('/').pop(),
-                        )
-                      "
-                    />
-                  </template>
-                </span>
-                <span v-else>
-                  <q-icon name="done" style="font-size: 20px" class="icons" />
-                </span>
-              </div>
-            </div>
 
-            <div v-if="message.content.voice_note" class="attachment-top">
-              <div class="voice-note-player row items-center no-wrap q-gutter-xs">
-                <q-btn
-                  :icon="
-                    currentPlayingVoiceNoteId === message.id && isPlaying ? 'pause' : 'play_arrow'
-                  "
-                  flat
-                  dense
-                  round
-                  @click="toggleVoiceNotePlay(message.id, message.content.voice_note)"
-                />
-                <div
-                  class="voice-note-waveform"
-                  :style="{
-                    width: '100px',
-                    height: '30px',
-                    backgroundColor: '#e0e0e0',
-                    borderRadius: '5px',
-                  }"
-                  @click="seekVoiceNote($event, message.id)"
-                >
+              <div v-if="message.content.voice_note" class="attachment-top">
+                <div class="voice-note-player row items-center no-wrap q-gutter-xs">
+                  <q-btn
+                    :icon="
+                      currentPlayingVoiceNoteId === message.id && isPlaying ? 'pause' : 'play_arrow'
+                    "
+                    flat
+                    dense
+                    round
+                    @click="toggleVoiceNotePlay(message.id, message.content.voice_note)"
+                  />
                   <div
-                    v-if="currentPlayingVoiceNoteId === message.id"
-                    class="waveform-progress"
-                    :style="{ width: voiceNoteProgress + '%' }"
-                  ></div>
-                  <div v-else class="waveform-static"></div>
-                </div>
-                <div style="font-size: 10px" class="voice-note-time text-caption text-grey-6">
-                  {{
-                    currentPlayingVoiceNoteId === message.id
-                      ? formatDuration(voiceNoteCurrentTime)
-                      : formatDuration(voiceNoteDurations[message.id] || 0)
-                  }}
-                  | {{ formatDuration(voiceNoteDurations[message.id] || 0) }}
+                    class="voice-note-waveform"
+                    :style="{
+                      width: '100px',
+                      height: '30px',
+                      backgroundColor: '#e0e0e0',
+                      borderRadius: '5px',
+                    }"
+                    @click="seekVoiceNote($event, message.id)"
+                  >
+                    <div
+                      v-if="currentPlayingVoiceNoteId === message.id"
+                      class="waveform-progress"
+                      :style="{ width: voiceNoteProgress + '%' }"
+                    ></div>
+                    <div v-else class="waveform-static"></div>
+                  </div>
+                  <div style="font-size: 10px" class="voice-note-time text-caption text-grey-6">
+                    {{
+                      currentPlayingVoiceNoteId === message.id
+                        ? formatDuration(voiceNoteCurrentTime)
+                        : formatDuration(voiceNoteDurations[message.id] || 0)
+                    }}
+                    | {{ formatDuration(voiceNoteDurations[message.id] || 0) }}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div
-              v-if="message.content.text"
-              :class="{ 'text-grey': message.is_deleted }"
-              class="message-text-content"
-            >
-              <span v-if="message.is_deleted && !message.isMine">
-                <span class="material-icons">do_not_disturb</span> This message was deleted.
-              </span>
-              <span class="ellipsis-12-lines" style="white-space: pre-wrap" v-else>
-                {{ message.content.text }}
-              </span>
-                <span v-if="message.hasLongText">
-                   <q-btn flat dense @click="readMore(message.id)">
-                      <a href="javascript:void(0)" class="scale-down text-teal" style="text-decoration: none; font-weight: 400; font-size: 12px;">Read more...</a>
-                   </q-btn>
+              <div v-if="message.content.text" class="message-text-content">
+                <span class="ellipsis-12-lines" style="white-space: pre-wrap">
+                  {{ message.content.text }}
                 </span>
-            </div>
+                <span v-if="message.hasLongText">
+                  <q-btn flat dense @click="readMore(message.id)">
+                    <a
+                      href="javascript:void(0)"
+                      class="scale-down text-teal"
+                      style="text-decoration: none; font-weight: 400; font-size: 12px"
+                      >Read more...</a
+                    >
+                  </q-btn>
+                </span>
+              </div>
 
-            <div
-              v-if="!message.is_deleted"
-              :class="message.isMine ? 'text-right' : 'text-left'"
-              style="font-size: 10px"
-              class="text-caption text-grey-5 message-timestamp"
-            >
-              <span
-                v-if="message.isMine && message.queued"
-                class="q-pr-xs material-icons"
-                style="font-size: 14px"
-                >schedule</span
+              <div
+                class="text-caption text-grey-5 message-timestamp"
+                :class="message.isMine ? 'text-right' : 'text-left'"
+                style="font-size: 10px"
               >
-              <span
-                v-if="
-                  message.isMine &&
-                  !message.queued &&
-                  message.read_by &&
-                  message.read_by.length > 0 &&
-                  checkReadBy(message.read_by)
-                "
-                class="text-blue q-pr-xs material-icons"
-                style="font-size: 14px"
-                >done_all</span
-              >
-              <span
-                v-else-if="message.isMine && !message.queued"
-                class="q-pr-xs material-icons"
-                style="font-size: 14px"
-                >done</span
-              >
-              {{ formatTime(message.sent_at) }}
-            </div>
+                <span
+                  v-if="message.isMine && message.queued"
+                  class="q-pr-xs material-icons"
+                  style="font-size: 14px"
+                  >schedule</span
+                >
+                <span
+                  v-if="
+                    message.isMine &&
+                    !message.queued &&
+                    message.read_by &&
+                    message.read_by.length > 0 &&
+                    checkReadBy(message.read_by)
+                  "
+                  class="text-blue q-pr-xs material-icons"
+                  style="font-size: 14px"
+                  >done_all</span
+                >
+                <span
+                  v-else-if="message.isMine && !message.queued"
+                  class="q-pr-xs material-icons"
+                  style="font-size: 14px"
+                  >done</span
+                >
+                {{ formatTime(message.sent_at) }}
+              </div>
+            </template>
           </div>
         </div>
       </div>
     </q-virtual-scroll>
 
-    
-    
     <div
       v-if="showGodownBtn"
       class="go-down-btn"
-      style="position: absolute; bottom: 70px; right: 10px; "
+      style="position: absolute; bottom: 70px; right: 10px"
     >
       <q-btn
-        @click="() => {scrollToBottom(); showBubbleActionContainer = false}"
+        @click="
+          () => {
+            scrollToBottom()
+            showBubbleActionContainer = false
+          }
+        "
         class="q-py-md q-ma-xs"
-        style=" font-size: 12px; color: #333"
+        style="font-size: 12px; color: #333"
         :style="{
-          color: newMsgAvailable ? 'green': '#333',
-          background: '#fff'
+          color: newMsgAvailable ? 'green' : '#333',
+          background: '#fff',
         }"
         rounded
-        :icon="newMsgAvailable?'fas fa-angles-down':'fas fa-angle-down'"
+        :icon="newMsgAvailable ? 'fas fa-angles-down' : 'fas fa-angle-down'"
       />
     </div>
 
     <transition name="chat-bubble-fade">
-      <div v-if="showBubbleActionContainer" class="chat-bubble-action-container">
-        <div class="blur-overlay" @click="showBubbleActionContainer = false"></div>
-
-        <div class="reaaction-btns" :style="bubbleReactionsStyle">
-          <div v-for="emoji in reactionsEmojis" :key="emoji">{{ emoji }}</div>
-          <div><i class="text-dark material-icons">add</i></div>
+      <div v-if="showBubbleActionContainer && !selectedMsg?.queued" class="chat-bubble-action-container">
+        <div class="blur-overlay" @click="() => {!editMode?showBubbleActionContainer = false:null}"></div>
+        
+        <div v-if="!editMode">
+           <div v-if="!selectedMsg?.is_deleted" class="reaaction-btns" :style="bubbleReactionsStyle">
+             <div v-for="emoji in reactionsEmojis" :key="emoji">{{ emoji }}</div>
+             <div><i class="text-dark material-icons">add</i></div>
+           </div>
+           <div v-if="!selectedMsg?.is_deleted" class="chat-bubble-actions" :style="bubbleActionContainerStyle">
+             <div
+               @click="
+                 () => {
+                   emit('msgToreply', selectedMsg)
+                   showBubbleActionContainer = false
+                 }
+               "
+             >
+               Reply to
+             </div>
+             <div v-if="selectedMsg.isMine" @click="deleteMsg()">Delete</div>
+             <div v-else>Hide</div>
+             <div
+               v-if="
+                 (selectedMsg.isMine &&
+                   Date.now() - new Date(selectedMsg?.updated_at).getTime() < 120000) ||
+                 Date.now() - parseInt(selectedMsg.sent_at) < 120000
+               "
+               
+               @click="editMsg()"
+             >
+               Edit
+             </div>
+             <div v-if="selectedMsg.content.text" @click="copyText(selectedMsg.content.text)">
+               Copy text
+             </div>
+             <div>Share</div>
+           </div>
+           <div v-else class="chat-bubble-actions" :style="bubbleActionContainerStyle">
+             <div v-if="selectedMsg.isMine" @click="hardDelete()">Hard delete</div>
+             <div v-else>Hide</div>
+             <div v-if="selectedMsg.isMine" @click="restoreMsg()">Restore</div>
+           </div>
         </div>
-        <div class="chat-bubble-actions" :style="bubbleActionContainerStyle">
-          <div @click="() => {
-             emit('msgToreply', selectedMsg)
-             showBubbleActionContainer = false
-          }">Reply to</div>
-          <div v-if="selectedMsg.isMine">Delete</div>
-          <div v-else>Hide</div>
-          <div
-            v-if="
-              (selectedMsg.isMine &&
-                Date.now() - new Date(selectedMsg?.updated_at).getTime() < 120000) ||
-              Date.now() - parseInt(selectedMsg.sent_at) < 120000
-            "
-          >
-            Edit
-          </div>
-          <div v-if="selectedMsg.content.text" @click="copyText(selectedMsg.content.text)">
-            Copy text
-          </div>
-          <div>Share</div>
+        <div v-else>
+            <div class="msg-in-edit-mode ">
+            <div style="flex-shrink: 0; flex-grow: 0;">
+                <q-btn flat dense icon="close" style="font-size: 20px;" @click="showBubbleActionContainer = false; editMode = false"/>
+             </div>
+            <div class="message-bubble message-mine" style=" flex-grow: 1; padding: 10px;">
+                {{ selectedMsg.content.text }}
+             </div>
+         </div>
         </div>
       </div>
     </transition>
   </div>
 </template>
+
 <script setup>
 import CustomVideoPlayer from 'components/VideoPlayer.vue'
 import { ref, computed, onUnmounted, watch, onMounted, nextTick } from 'vue'
@@ -366,13 +403,14 @@ import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
 import { useMsgStore } from 'stores/messages'
 import { formatFileSize, getAvatarSrc } from 'src/composables/formater'
+import { EventBus } from "boot/event-bus"
 
 const messageStore = useMessageStore()
 const imbMsg = useMsgStore()
 const props = defineProps({
   currentConversation: Object,
 })
-const emit = defineEmits(['msgToreply'])
+const emit = defineEmits(['msgToreply', 'editMode'])
 const userStore = useUserStore()
 const $q = useQuasar()
 
@@ -380,8 +418,19 @@ const notReadbyMeRef = ref(null)
 let observer
 
 const messages = ref([])
+const selectedMsg = ref(null)
 const newMsgAvailable = ref(false)
 let isFirstMounted
+const actionHappened = ref(false)
+const editMode = ref(false)
+
+watch(editMode, (newVal) => {
+   if(newVal === true) {
+      emit('editMode', selectedMsg.value)
+   } else {
+      emit('editMode', null)
+   }
+})
 
 function checkReadBy(readByArray) {
   if (readByArray.length === 0) {
@@ -422,6 +471,12 @@ watch(
         return msg.conversation_id === props.currentConversation.id
       })
       messages.value = [...new Set([...messages.value, ...queuedMsgs])]
+      actionHappened.value = false
+    }
+    
+    if(newMsgs.length === 0) {
+       fetchHistMsg()
+       actionHappened.value = false
     }
   },
   { deep: true },
@@ -431,6 +486,12 @@ onMounted(async () => {
   isFirstMounted = true
   imbMsg.initializeStore()
   await fetchHistMsg()
+  
+  EventBus.on('sent-edit', () => {
+     fetchHistMsg()
+     editMode.value = false
+     showBubbleActionContainer.value = false
+  })
 
   if (messageStore.queued.length > 0) {
     const queuedMsgs = messageStore.queued.filter((msg) => {
@@ -793,6 +854,7 @@ function scrollToMsg(msgId) {
    }
 }
 
+
 watch(
   groupedMessages,
   () => {
@@ -811,6 +873,7 @@ watch(
         getDistanceFromBottom() > 250 &&
         !groupedMessages.value[groupedMessages.value.length - 1].isMine
       ) {
+        if(actionHappened.value) return
         newMsgAvailable.value = true
       }
     })
@@ -1031,7 +1094,6 @@ const showBubbleActionContainer = ref(false)
 const bubbleActionContainerStyle = ref({})
 const reactionsEmojis = ['❤', '👍', '😀', '🙏', '✊️']
 const bubbleReactionsStyle = ref({})
-const selectedMsg = ref(null)
 
 function showBubbleAction(event, msg) {
   selectedMsg.value = msg
@@ -1082,12 +1144,12 @@ function showBubbleAction(event, msg) {
 
   if (selectedMsg.value.isMine) {
     bubbleReactionsStyle.value = {
-      top: `${top > 70 ? top - 70 : top + 170}px`,
+      bottom: `0`,
       right: `15px`,
     }
   } else {
     bubbleReactionsStyle.value = {
-      top: `${top > 70 ? top - 70 : top + 170}px`,
+      bottom: '0',
       left: `15px`,
     }
   }
@@ -1119,6 +1181,8 @@ function swipeToReply(e, msg) {
   if (msg.sender_type !== 'user') {
     return
   }
+  
+  if(msg.is_deleted) return
   swipingMessageId.value = msg.id
   swipingMessage.value = msg
 
@@ -1179,6 +1243,64 @@ function readMore(msgId) {
    void msgFound
    //logic to open a pop model to view the long text
 }
+
+async function deleteMsg() {
+   if(selectedMsg.value) {
+      try {
+         await api.post(`/api/msg/${selectedMsg.value.id}/delete`)
+         messages.value.find(msg => msg.id === selectedMsg.value.id).is_deleted = true
+         actionHappened.value = true
+      } catch(e) {
+         if(e) {
+            $q.dialog({message: "Unable to delete message, try again"})
+         }
+      } finally {
+         // This code is guaranteed to run after the try/catch block finishes
+         showBubbleActionContainer.value = false
+      }
+   }
+}
+async function restoreMsg() {
+   if(selectedMsg.value) {
+      try {
+         await api.post(`/api/msg/${selectedMsg.value.id}/restore`)
+         messages.value.find(msg => msg.id === selectedMsg.value.id).is_deleted = false
+         actionHappened.value = true
+      } catch(e) {
+         if(e) {
+            $q.dialog({message: "Unable to restore message, try again"})
+         }
+      } finally {
+         // This code is guaranteed to run after the try/catch block finishes
+         showBubbleActionContainer.value = false
+      }
+   }
+}
+
+async function hardDelete() {
+   $q.dialog({
+      message: "Are sure you want to perform this action, it is irreversible!",
+      ok: "continue",
+      cancel: true
+   }).onOk(async () => {
+      try {
+         await api.delete(`/api/msg/${selectedMsg.value.id}/hardDelete/`)
+         actionHappened.value = true
+         fetchHistMsg()
+         showBubbleActionContainer.value = false
+      } catch (e) {
+         $q.dialog({message: e.message})
+      }
+   })
+   
+}
+
+
+function editMsg() {
+   editMode.value = true
+}
+
+
 </script>
 
 <style scoped lang="scss">
@@ -1515,5 +1637,16 @@ function readMore(msgId) {
 .highlight-msg {
    background: #b1e4e475;
    transition: background 0.5s linear;
+}
+
+
+.msg-in-edit-mode {
+   position: absolute;
+   bottom: 70px;
+   width: 100%;
+   padding: 10px;
+   z-index: 1001;
+   display: flex;
+   justify-content: space-between;
 }
 </style>
