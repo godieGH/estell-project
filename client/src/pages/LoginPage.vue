@@ -1,6 +1,6 @@
 <template>
   <q-page class="flex flex-center bg-gradient">
-    <q-card class="q-pa-lg shadow-2" style="width: 400px; max-width: 85vw; border-radius: 10px">
+    <q-card flat dense bordered class="q-pa-lg shadow-2" style="width: 400px; max-width: 85vw; border-radius: 10px">
       <q-card-section>
         <div class="text-h5 text-center text-primary">Welcome Back</div>
       </q-card-section>

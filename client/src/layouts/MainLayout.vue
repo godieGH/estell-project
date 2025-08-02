@@ -376,6 +376,7 @@ const checkServerStatus = async () => {
   try {
     const response = await api.get('/api/')
     getConversations()
+    messageStore.processAllQueuedMessages()
     // Check if the response from the server is what we expect
     return response.status === 200 && response.data.status === 'ok'
   } catch (err) {
@@ -398,7 +399,7 @@ const updateStatus = async () => {
 
 onMounted(async () => {
   // Check user authentication first
-  const needLogin = await userStore.initialize($q)
+  const needLogin = await userStore.initialize()
   if (needLogin) {
     router.push('/auth/login')
     return

@@ -30,6 +30,7 @@
             showBubbleAction(event, message)
           }
         "
+        :class="scrolledTo?.state && message.id === scrolledTo?.id ?'highlight-msg':''"
       >
         <div
           v-if="message.id === swipingMessageId && panX > 60"
@@ -76,8 +77,8 @@
             :class="message.isMine ? 'message-bubble message-mine' : 'message-bubble message-other'"
             class="q-pa-sm q-ma-xs"
           >
-            <div v-if="message.reply_to_message" class="reply-bubble">
-              <div class="text-caption text-blue-8 text-bold">
+            <div v-if="message.reply_to_message" class="reply-bubble" @click="scrollToMsg(message.reply_to_message.id)">
+              <div class="text-caption text-blue-8 text-bold" >
                 Replying to
                 {{
                   message.isMine
@@ -307,17 +308,18 @@
     <div
       v-if="showGodownBtn"
       class="go-down-btn"
-      style="position: absolute; bottom: 70px; right: 10px; z-index: 999999"
+      style="position: absolute; bottom: 70px; right: 10px; "
     >
       <q-btn
-        @click="() => {scrollTo(); showBubbleActionContainer = false}"
+        @click="() => {scrollToBottom(); showBubbleActionContainer = false}"
         class="q-py-md q-ma-xs"
-        style="font-size: 12px; color: #333"
+        style=" font-size: 12px; color: #333"
         :style="{
-          background: newMsgAvailable ? 'green' : null,
+          color: newMsgAvailable ? 'green': '#333',
+          background: '#fff'
         }"
         rounded
-        icon="fas fa-chevron-down"
+        :icon="newMsgAvailable?'fas fa-angles-down':'fas fa-angle-down'"
       />
     </div>
 
@@ -427,7 +429,7 @@ watch(
 
 onMounted(async () => {
   isFirstMounted = true
-  imbMsg.initializeStore($q)
+  imbMsg.initializeStore()
   await fetchHistMsg()
 
   if (messageStore.queued.length > 0) {
@@ -753,15 +755,42 @@ const scrollTo = () => {
       })
 
       if (x >= 0) {
-        virtualScroll.value.scrollTo(x, 0)
+        virtualScroll.value.scrollTo(x, "center")
         isFirstMounted = false
       } else {
-        virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 0)
+        virtualScroll.value.scrollTo(groupedMessages.value.length - 1, "start")
       }
       return
     }
-    virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 0)
+    virtualScroll.value.scrollTo(groupedMessages.value.length - 1, "start")
   }
+}
+const scrolledTo = ref(null)
+const scrollTimer = ref(null)
+function scrollToBottom() {
+   if (virtualScroll.value && groupedMessages.value.length > 0) {
+      if(newMsgAvailable.value) {
+         const msgIndex = groupedMessages.value.findIndex(msg => msg.id === unreadSeparatorMsgId.value)
+         virtualScroll.value.scrollTo(msgIndex, "center")
+      } else {
+         virtualScroll.value.scrollTo(groupedMessages.value.length - 1, "start")
+      }
+   }
+}
+function scrollToMsg(msgId) {
+   scrolledTo.value = null
+   scrollTimer.value = null
+   if(virtualScroll.value && groupedMessages.value.length > 0) {
+      const msgIndex = groupedMessages.value.findIndex(msg => msg.id === msgId)
+      virtualScroll.value.scrollTo(msgIndex, "center")
+      scrolledTo.value = {
+         state: true,
+         id: msgId
+      }
+      scrollTimer.value = setTimeout(function() {
+         scrolledTo.value = null
+      }, 2500);
+   }
 }
 
 watch(
@@ -1259,8 +1288,13 @@ function readMore(msgId) {
   font-size: 0.85em;
   word-wrap: break-word;
   overflow: hidden;
+  cursor: pointer;
   text-overflow: ellipsis; /* For long text replies */
   white-space: nowrap; /* Keep the content on a single line */
+
+   &:active {
+      background: #d5dada75;
+   }
 }
 
 .reply-bubble .text-bold {
@@ -1476,5 +1510,10 @@ function readMore(msgId) {
 
 .scale-down:active {
    transform: scale(0.9);
+}
+
+.highlight-msg {
+   background: #b1e4e475;
+   transition: background 0.5s linear;
 }
 </style>

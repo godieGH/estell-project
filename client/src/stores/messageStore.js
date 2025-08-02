@@ -28,7 +28,7 @@ export const useMessageStore = defineStore('messageStore', {
     },
   }),
   actions: {
-    async initializeStore($q) {
+    async initializeStore() {
       //console.log('Initializing message store and loading queued messages from IndexedDB.')
       try {
         const storedMessages = await db.queuedMessages.toArray()
@@ -44,7 +44,7 @@ export const useMessageStore = defineStore('messageStore', {
         })
         //console.log(`Loaded ${this.queued.length} queued messages from IndexedDB.`)
         if (this.queued.length > 0) {
-          this.processAllQueuedMessages($q)
+          this.processAllQueuedMessages()
         }
       } catch (error) {
         console.error('Error initializing store or loading messages from IndexedDB:', error)
@@ -242,7 +242,6 @@ export const useMessageStore = defineStore('messageStore', {
       }
     },
     async processAllQueuedMessages($q = null) {
-      //console.log('Processing all currently queued messages.')
       const messagesToProcess = [...this.queued]
       for (const msg of messagesToProcess) {
         if (msg.queued) {
