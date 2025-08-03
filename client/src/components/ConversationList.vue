@@ -47,7 +47,7 @@
               <span style="font-size: 10px" class="q-mb-xs">
                 <q-skeleton type="text" width="50px" />
               </span>
-              <span style="border-radius: 50px; background: green">
+              <span style="border-radius: 50px;">
                 <q-skeleton type="circle" size="20px" />
               </span>
             </q-item-section>

@@ -92,7 +92,15 @@ module.exports = function (io, socket) {
         });
         socket.to(conversation_id).emit("new_msg", creationSystemMessage);
       }
-
+      
+      let replyToMsgId;
+      const checkIfReplyToMsgExist = await Message.findByPk(reply_to_message?.id)
+      if(checkIfReplyToMsgExist) {
+         replyToMsgId = reply_to_message?.id;
+      } else {
+         replyToMsgId = null
+      }
+      
       const msg = await Message.create({
         conversation_id,
         sender_id: userId,
@@ -104,7 +112,7 @@ module.exports = function (io, socket) {
           attachment_metadata: content.attachment_metadata || null,
           voice_note: content.voice_note || null,
         },
-        reply_to_message_id: reply_to_message?.id,
+        reply_to_message_id: replyToMsgId,
         ConversationId: conversation_id,
       });
 

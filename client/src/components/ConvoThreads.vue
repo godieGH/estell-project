@@ -329,6 +329,45 @@
         </div>
       </div>
     </q-virtual-scroll>
+    
+    
+ <transition name="chat-bubble-fade">
+   <div v-if="userIsRecording || userIstyping">
+   <div v-if="userIstyping" class="typing-record-status is-typing">
+     <div class="status-container">
+       <div class="user-avatar">
+          <img :src="getAvatarSrc(userWhoIsOnStatus.avatar)">
+         </div>
+   
+       <div class="typing-indicator">
+         <span class="loader-dot"></span>
+         <span class="loader-dot"></span>
+         <span class="loader-dot"></span>
+       </div>
+     </div>
+   </div>
+   
+   
+   <div v-if="userIsRecording" class="typing-record-status is-recording">
+     <div class="status-container">
+       <div class="user-avatar">
+          <img :src="getAvatarSrc(userWhoIsOnStatus.avatar)">
+         </div>
+   
+       <div class="recording-indicator">
+         <i class="material-icons">mic</i>
+         <div class="recording-indicator">
+           <span class="loader-dot"></span>
+           <span class="loader-dot"></span>
+           <span class="loader-dot"></span>
+         </div>
+       </div>
+     </div>
+   </div>
+</div>   
+ </transition>   
+
+
 
     <div
       v-if="showGodownBtn"
@@ -355,6 +394,7 @@
 
     <transition name="chat-bubble-fade">
       <div
+      style="overflow-y: hidden;"
         v-if="showBubbleActionContainer && !selectedMsg?.queued"
         class="chat-bubble-action-container"
       >
@@ -369,7 +409,7 @@
 
         <div v-if="!editMode">
           <div v-if="!selectedMsg?.is_deleted" class="reaaction-btns" :style="bubbleReactionsStyle">
-            <div v-for="emoji in reactionsEmojis" :key="emoji">{{ emoji }}</div>
+            <div v-for="emoji in reactionsEmojis" style="color: red;" :key="emoji">{{ emoji }}</div>
             <div><i class="text-dark material-icons">add</i></div>
           </div>
           <div
@@ -783,6 +823,12 @@ onUnmounted(async () => {
     // Make sure observer is defined before disconnecting
     observer.disconnect()
   }
+  
+  EventBus.off('sent-edit', () => {
+    fetchHistMsg()
+    editMode.value = false
+    showBubbleActionContainer.value = false
+  })
 })
 
 const unreadSeparatorMsgId = ref('123456')
@@ -908,13 +954,19 @@ watch(
   () => {
     nextTick(() => {
       if (groupedMessages.value[groupedMessages.value.length - 1].isMine) {
-        scrollTo()
+        if(!actionHappened.value) {
+           scrollTo()
+           showGodownBtn.value = false
+        }
       }
       if (
         !groupedMessages.value[groupedMessages.value.length - 1].isMine &&
         getDistanceFromBottom() < 200
       ) {
-        scrollTo()
+        if(!actionHappened.value) {
+           scrollTo()
+           showGodownBtn.value = false
+        }
       }
 
       if (
@@ -1343,6 +1395,46 @@ async function hardDelete() {
 function editMsg() {
   editMode.value = true
 }
+
+onMounted(() => {
+   socket.on('user_is', createStatus)
+})
+
+onUnmounted(() => {
+   socket.off('user_is', createStatus)
+})
+
+const userIstyping = ref(false)
+const userIsRecording = ref(false)
+const userWhoIsOnStatus = ref(null)
+
+function createStatus({status, convoId, user, type}) {
+   
+   if(convoId !== props.currentConversation.id) return
+   if(getDistanceFromBottom() < 100) {
+      chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+   }
+   if(type === "typing") {
+      userIsRecording.value = false
+      if(status) {
+         userIstyping.value = true
+         userWhoIsOnStatus.value = user
+      } else {
+         userIstyping.value = false
+         userWhoIsOnStatus.value = null
+      }
+   }
+   if(type === "recording") {
+      userIstyping.value = false
+      if(status) {
+         userIsRecording.value = true
+         userWhoIsOnStatus.value = user
+      } else {
+         userIsRecording.value = false
+         userWhoIsOnStatus.value = null
+      }
+   }
+}
 </script>
 
 <style scoped lang="scss">
@@ -1682,4 +1774,83 @@ function editMsg() {
   display: flex;
   justify-content: space-between;
 }
+
+
+
+.typing-record-status {
+  display: flex;
+  align-items: center;
+  padding: 10px 0;
+  gap: 8px;
+  .status-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .user-avatar {
+    img {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+    }
+  }
+
+  .typing-indicator,
+  .recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px; 
+  }
+}
+
+.is-typing {
+  .typing-indicator {
+    border-radius: 20px;
+    padding: 8px 12px;
+  }
+  .recording-indicator {
+    display: none;
+  }
+}
+
+.is-recording {
+  .typing-indicator {
+    display: none; 
+  }
+  .recording-indicator {
+    .material-icons {
+      font-size: 20px;
+      color: #ff4500;
+    }
+  }
+}
+
+.loader-dot {
+  width: 6px;
+  height: 6px;
+  background-color: #999;
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+
+  &:nth-child(1) {
+    animation-delay: -0.32s;
+  }
+  &:nth-child(2) {
+    animation-delay: -0.16s;
+  }
+  &:nth-child(3) {
+    animation-delay: 0s;
+  }
+}
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
 </style>

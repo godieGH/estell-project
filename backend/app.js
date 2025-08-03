@@ -34,6 +34,16 @@ io.on("connection", (socket) => {
     });
   });
 
+  socket.on('is_typing', ({status, convoId, user}) => {
+    //console.log(status, convoId, user)
+     socket.to(convoId).emit('user_is', ({status, convoId, user, type: "typing"}))
+  })
+  
+  socket.on('is_recording', ({status, convoId, user}) => {
+     socket.to(convoId).emit('user_is', ({status, convoId, user, type: "recording"}))
+  })
+  
+  
   socket.on("read_msg", ({ msgId, convoId }) => {
     io.to(convoId).emit("someone_raed_msg", msgId);
   });

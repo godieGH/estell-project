@@ -153,6 +153,7 @@ import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
 import { EventBus } from 'boot/event-bus'
 import { api } from 'boot/axios'
+import { socket } from 'boot/socket'
 
 const userStore = useUserStore()
 const messageStore = useMessageStore()
@@ -582,7 +583,7 @@ onUnmounted(() => {
 
 async function sendMsg() {
   if (!hasTyped.value && !hasAttachment.value && !fullAudioBlob.value) return
-
+  clearTimeout(typingTimeout);
   const content = {
     text: message.value != '' ? message.value : null,
     attachment: hasAttachment.value ? { ...attachment.value } : null,
@@ -639,7 +640,8 @@ async function sendMsg() {
 async function sendEdit() {
   if (message.value === props.messageToEdit || message.value.length === 0) return
   const textarea = textareaRef.value
-
+  clearTimeout(typingTimeout);
+  
   try {
     await api.post(`/api/msg/${props.messageToEdit.id}/edit`, { editText: message.value })
     EventBus.emit('sent-edit')
@@ -652,12 +654,40 @@ async function sendEdit() {
 }
 
 function handleAreaFocus() {
-  EventBus.emit('area-focus')
+  EventBus.emit('textarea-on-focus')
 }
 
-watch(textAreaValue, (a) => {
-   console.log(a)
+
+
+let typingTimeout = null;
+
+const TYPING_DELAY = 400; 
+
+watch(textAreaValue, (newValue) => {
+  if(newValue.length > 0)
+  clearTimeout(typingTimeout);
+
+  sendTypingStatus(true);
+
+  typingTimeout = setTimeout(() => {
+    sendTypingStatus(false);
+  }, TYPING_DELAY);
+});
+watch(isRecording, (newValue) => {
+   sendRecordingStatus(newValue)
 })
+
+function sendTypingStatus(isTyping) {
+  socket.emit('is_typing', {convoId: props.currentConversation.id, status: isTyping, user: {id: userStore.user.id, username: userStore.user.username, avatar: userStore.user.avatar}})
+}
+
+function sendRecordingStatus(isRecording) {
+  socket.emit('is_recording', {convoId: props.currentConversation.id, status: isRecording, user: {id: userStore.user.id, username: userStore.user.username, avatar: userStore.user.avatar}})
+}
+
+
+
+
 
 
 </script>

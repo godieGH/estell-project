@@ -376,7 +376,7 @@ const checkServerStatus = async () => {
   try {
     const response = await api.get('/api/')
     getConversations()
-    messageStore.processAllQueuedMessages()
+    //messageStore.processAllQueuedMessages()
     // Check if the response from the server is what we expect
     return response.status === 200 && response.data.status === 'ok'
   } catch (err) {
