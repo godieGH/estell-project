@@ -75,10 +75,23 @@
 
           <div
             :class="message.isMine ? 'message-bubble message-mine' : 'message-bubble message-other'"
+            :style="{
+              'background-color': message.isMine
+                ? $q.dark.isActive
+                  ? '#333537'
+                  : '#E9EEF6'
+                : $q.dark.isActive
+                  ? '#141414'
+                  : '#ffffff',
+            }"
             class="q-pa-sm q-ma-xs"
           >
-            <div v-if="message.is_deleted" class="message-text-content text-grey" style="display: flex; align-items: center; font-style: italic;">
-              <span class="material-icons q-mr-xs" style="font-size: 16px;">do_not_disturb</span>
+            <div
+              v-if="message.is_deleted"
+              class="message-text-content text-grey"
+              style="display: flex; align-items: center; font-style: italic"
+            >
+              <span class="material-icons q-mr-xs" style="font-size: 16px">do_not_disturb</span>
               <span>This message was deleted.</span>
             </div>
 
@@ -279,13 +292,16 @@
                 :class="message.isMine ? 'text-right' : 'text-left'"
                 style="font-size: 10px"
               >
-                <span v-if="message.is_edited && message.isMine" style="margin-right: 10px;">edited</span>
-                
+                <span v-if="message.is_edited && message.isMine" style="margin-right: 10px"
+                  >edited</span
+                >
+
                 <span
                   v-if="message.isMine && message.queued"
                   class="q-pr-xs material-icons"
                   style="font-size: 14px"
-                  >schedule</span>
+                  >schedule</span
+                >
                 <span
                   v-if="
                     message.isMine &&
@@ -305,7 +321,7 @@
                   >done</span
                 >
                 {{ formatTime(message.sent_at) }}
-                
+
                 <span v-if="message.is_edited && !message.isMine">edited</span>
               </div>
             </template>
@@ -338,58 +354,87 @@
     </div>
 
     <transition name="chat-bubble-fade">
-      <div v-if="showBubbleActionContainer && !selectedMsg?.queued" class="chat-bubble-action-container">
-        <div class="blur-overlay" @click="() => {!editMode?showBubbleActionContainer = false:null}"></div>
-        
+      <div
+        v-if="showBubbleActionContainer && !selectedMsg?.queued"
+        class="chat-bubble-action-container"
+      >
+        <div
+          class="blur-overlay"
+          @click="
+            () => {
+              !editMode ? (showBubbleActionContainer = false) : null
+            }
+          "
+        ></div>
+
         <div v-if="!editMode">
-           <div v-if="!selectedMsg?.is_deleted" class="reaaction-btns" :style="bubbleReactionsStyle">
-             <div v-for="emoji in reactionsEmojis" :key="emoji">{{ emoji }}</div>
-             <div><i class="text-dark material-icons">add</i></div>
-           </div>
-           <div v-if="!selectedMsg?.is_deleted" class="chat-bubble-actions" :style="bubbleActionContainerStyle">
-             <div
-               @click="
-                 () => {
-                   emit('msgToreply', selectedMsg)
-                   showBubbleActionContainer = false
-                 }
-               "
-             >
-               Reply to
-             </div>
-             <div v-if="selectedMsg.isMine" @click="deleteMsg()">Delete</div>
-             <div v-else>Hide</div>
-             <div
-               v-if="
-                 (selectedMsg.isMine && (
-                   Date.now() - new Date(selectedMsg?.updated_at).getTime() < 120000) ||
-                 Date.now() - parseInt(selectedMsg.sent_at) < 120000) && !selectedMsg.content.voice_note
-               "
-               
-               @click="editMsg()"
-             >
-               Edit
-             </div>
-             <div v-if="selectedMsg.content.text" @click="copyText(selectedMsg.content.text)">
-               Copy text
-             </div>
-             <div>Share</div>
-           </div>
-           <div v-else class="chat-bubble-actions" :style="bubbleActionContainerStyle">
-             <div v-if="selectedMsg.isMine" @click="hardDelete()">Hard delete</div>
-             <div v-else>Hide</div>
-             <div v-if="selectedMsg.isMine" @click="restoreMsg()">Restore</div>
-           </div>
+          <div v-if="!selectedMsg?.is_deleted" class="reaaction-btns" :style="bubbleReactionsStyle">
+            <div v-for="emoji in reactionsEmojis" :key="emoji">{{ emoji }}</div>
+            <div><i class="text-dark material-icons">add</i></div>
+          </div>
+          <div
+            v-if="!selectedMsg?.is_deleted"
+            class="chat-bubble-actions"
+            :style="bubbleActionContainerStyle"
+          >
+            <div
+              @click="
+                () => {
+                  emit('msgToreply', selectedMsg)
+                  showBubbleActionContainer = false
+                }
+              "
+            >
+              Reply to
+            </div>
+            <div v-if="selectedMsg.isMine" @click="deleteMsg()">Delete</div>
+            <div v-else>Hide</div>
+            <div
+              v-if="
+                ((selectedMsg.isMine &&
+                  Date.now() - new Date(selectedMsg?.updated_at).getTime() < 120000) ||
+                  Date.now() - parseInt(selectedMsg.sent_at) < 120000) &&
+                !selectedMsg.content.voice_note
+              "
+              @click="editMsg()"
+            >
+              Edit
+            </div>
+            <div v-if="selectedMsg.content.text" @click="copyText(selectedMsg.content.text)">
+              Copy text
+            </div>
+            <div>Share</div>
+          </div>
+          <div v-else class="chat-bubble-actions" :style="bubbleActionContainerStyle">
+            <div v-if="selectedMsg.isMine" @click="hardDelete()">Hard delete</div>
+            <div v-else>Hide</div>
+            <div v-if="selectedMsg.isMine" @click="restoreMsg()">Restore</div>
+          </div>
         </div>
         <div v-else>
-            <div class="msg-in-edit-mode ">
-            <div style="flex-shrink: 0; flex-grow: 0;">
-                <q-btn flat dense icon="close" style="font-size: 20px;" @click="showBubbleActionContainer = false; editMode = false"/>
-             </div>
-            <div class="message-bubble message-mine" style=" flex-grow: 1; padding: 10px;">
-                {{ selectedMsg.content.text }}
-             </div>
-         </div>
+          <div class="msg-in-edit-mode">
+            <div style="flex-shrink: 0; flex-grow: 0">
+              <q-btn
+                flat
+                dense
+                icon="close"
+                style="font-size: 20px"
+                @click="
+                  () => {
+                    showBubbleActionContainer = false
+                    editMode = false
+                  }
+                "
+              />
+            </div>
+            <div
+              :style="{ background: $q.dark.isActive ? '#333537' : '#E9EEF6' }"
+              class="message-bubble message-mine"
+              style="flex-grow: 1; padding: 10px"
+            >
+              {{ selectedMsg.content.text }}
+            </div>
+          </div>
         </div>
       </div>
     </transition>
@@ -406,7 +451,7 @@ import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
 import { useMsgStore } from 'stores/messages'
 import { formatFileSize, getAvatarSrc } from 'src/composables/formater'
-import { EventBus } from "boot/event-bus"
+import { EventBus } from 'boot/event-bus'
 
 const messageStore = useMessageStore()
 const imbMsg = useMsgStore()
@@ -428,11 +473,11 @@ const actionHappened = ref(false)
 const editMode = ref(false)
 
 watch(editMode, (newVal) => {
-   if(newVal === true) {
-      emit('editMode', selectedMsg.value)
-   } else {
-      emit('editMode', null)
-   }
+  if (newVal === true) {
+    emit('editMode', selectedMsg.value)
+  } else {
+    emit('editMode', null)
+  }
 })
 
 function checkReadBy(readByArray) {
@@ -452,13 +497,13 @@ function checkReadBy(readByArray) {
 async function fetchHistMsg() {
   try {
     const { data } = await api.get(`/api/get/msgs/${props.currentConversation.id}/`)
-    const refinedData = data.map(msg => {
-       return {
-          ...msg,
-          hasLongText: msg.content.text?.length > 500 || msg.content.text?.split('\n').length > 12
-       }
+    const refinedData = data.map((msg) => {
+      return {
+        ...msg,
+        hasLongText: msg.content.text?.length > 500 || msg.content.text?.split('\n').length > 12,
+      }
     })
-    
+
     messages.value = [...refinedData]
   } catch (err) {
     console.error(err.message)
@@ -476,10 +521,10 @@ watch(
       messages.value = [...new Set([...messages.value, ...queuedMsgs])]
       actionHappened.value = false
     }
-    
-    if(newMsgs.length === 0) {
-       fetchHistMsg()
-       actionHappened.value = false
+
+    if (newMsgs.length === 0) {
+      fetchHistMsg()
+      actionHappened.value = false
     }
   },
   { deep: true },
@@ -489,11 +534,11 @@ onMounted(async () => {
   isFirstMounted = true
   imbMsg.initializeStore()
   await fetchHistMsg()
-  
+
   EventBus.on('sent-edit', () => {
-     fetchHistMsg()
-     editMode.value = false
-     showBubbleActionContainer.value = false
+    fetchHistMsg()
+    editMode.value = false
+    showBubbleActionContainer.value = false
   })
 
   if (messageStore.queued.length > 0) {
@@ -782,7 +827,6 @@ const groupedMessages = computed(() => {
 
     currentMessage.isMine = currentMessage.sender_id === userStore.user.id
 
-    
     if (!currentMessage.isMine && i === sortedMessages.length - 1) {
       currentMessage.notReadByMe =
         !currentMessage.read_by || !currentMessage.read_by.includes(userStore.user.id)
@@ -819,44 +863,45 @@ const scrollTo = () => {
       })
 
       if (x >= 0) {
-        virtualScroll.value.scrollTo(x, "center")
+        virtualScroll.value.scrollTo(x, 'center')
         isFirstMounted = false
       } else {
-        virtualScroll.value.scrollTo(groupedMessages.value.length - 1, "start")
+        virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
       }
       return
     }
-    virtualScroll.value.scrollTo(groupedMessages.value.length - 1, "start")
+    virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
   }
 }
 const scrolledTo = ref(null)
 const scrollTimer = ref(null)
 function scrollToBottom() {
-   if (virtualScroll.value && groupedMessages.value.length > 0) {
-      if(newMsgAvailable.value) {
-         const msgIndex = groupedMessages.value.findIndex(msg => msg.id === unreadSeparatorMsgId.value)
-         virtualScroll.value.scrollTo(msgIndex, "center")
-      } else {
-         virtualScroll.value.scrollTo(groupedMessages.value.length - 1, "start")
-      }
-   }
+  if (virtualScroll.value && groupedMessages.value.length > 0) {
+    if (newMsgAvailable.value) {
+      const msgIndex = groupedMessages.value.findIndex(
+        (msg) => msg.id === unreadSeparatorMsgId.value,
+      )
+      virtualScroll.value.scrollTo(msgIndex, 'center')
+    } else {
+      virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
+    }
+  }
 }
 function scrollToMsg(msgId) {
-   scrolledTo.value = null
-   scrollTimer.value = null
-   if(virtualScroll.value && groupedMessages.value.length > 0) {
-      const msgIndex = groupedMessages.value.findIndex(msg => msg.id === msgId)
-      virtualScroll.value.scrollTo(msgIndex, "center")
-      scrolledTo.value = {
-         state: true,
-         id: msgId
-      }
-      scrollTimer.value = setTimeout(function() {
-         scrolledTo.value = null
-      }, 2500);
-   }
+  scrolledTo.value = null
+  scrollTimer.value = null
+  if (virtualScroll.value && groupedMessages.value.length > 0) {
+    const msgIndex = groupedMessages.value.findIndex((msg) => msg.id === msgId)
+    virtualScroll.value.scrollTo(msgIndex, 'center')
+    scrolledTo.value = {
+      state: true,
+      id: msgId,
+    }
+    scrollTimer.value = setTimeout(function () {
+      scrolledTo.value = null
+    }, 2500)
+  }
 }
-
 
 watch(
   groupedMessages,
@@ -876,7 +921,7 @@ watch(
         getDistanceFromBottom() > 250 &&
         !groupedMessages.value[groupedMessages.value.length - 1].isMine
       ) {
-        if(actionHappened.value) return
+        if (actionHappened.value) return
         newMsgAvailable.value = true
       }
     })
@@ -1184,8 +1229,8 @@ function swipeToReply(e, msg) {
   if (msg.sender_type !== 'user') {
     return
   }
-  
-  if(msg.is_deleted) return
+
+  if (msg.is_deleted) return
   swipingMessageId.value = msg.id
   swipingMessage.value = msg
 
@@ -1237,73 +1282,67 @@ async function copyText(txt) {
   }
 }
 
-
-
 function readMore(msgId) {
-   const msgFound = messages.value.find(msg => {
-      return msg.id === msgId
-   })
-   void msgFound
-   //logic to open a pop model to view the long text
+  const msgFound = messages.value.find((msg) => {
+    return msg.id === msgId
+  })
+  void msgFound
+  //logic to open a pop model to view the long text
 }
 
 async function deleteMsg() {
-   if(selectedMsg.value) {
-      try {
-         await api.post(`/api/msg/${selectedMsg.value.id}/delete`)
-         messages.value.find(msg => msg.id === selectedMsg.value.id).is_deleted = true
-         actionHappened.value = true
-      } catch(e) {
-         if(e) {
-            $q.dialog({message: "Unable to delete message, try again"})
-         }
-      } finally {
-         // This code is guaranteed to run after the try/catch block finishes
-         showBubbleActionContainer.value = false
+  if (selectedMsg.value) {
+    try {
+      await api.post(`/api/msg/${selectedMsg.value.id}/delete`)
+      messages.value.find((msg) => msg.id === selectedMsg.value.id).is_deleted = true
+      actionHappened.value = true
+    } catch (e) {
+      if (e) {
+        $q.dialog({ message: 'Unable to delete message, try again' })
       }
-   }
+    } finally {
+      // This code is guaranteed to run after the try/catch block finishes
+      showBubbleActionContainer.value = false
+    }
+  }
 }
 async function restoreMsg() {
-   if(selectedMsg.value) {
-      try {
-         await api.post(`/api/msg/${selectedMsg.value.id}/restore`)
-         messages.value.find(msg => msg.id === selectedMsg.value.id).is_deleted = false
-         actionHappened.value = true
-      } catch(e) {
-         if(e) {
-            $q.dialog({message: "Unable to restore message, try again"})
-         }
-      } finally {
-         // This code is guaranteed to run after the try/catch block finishes
-         showBubbleActionContainer.value = false
+  if (selectedMsg.value) {
+    try {
+      await api.post(`/api/msg/${selectedMsg.value.id}/restore`)
+      messages.value.find((msg) => msg.id === selectedMsg.value.id).is_deleted = false
+      actionHappened.value = true
+    } catch (e) {
+      if (e) {
+        $q.dialog({ message: 'Unable to restore message, try again' })
       }
-   }
+    } finally {
+      // This code is guaranteed to run after the try/catch block finishes
+      showBubbleActionContainer.value = false
+    }
+  }
 }
 
 async function hardDelete() {
-   $q.dialog({
-      message: "Are sure you want to perform this action, it is irreversible!",
-      ok: "continue",
-      cancel: true
-   }).onOk(async () => {
-      try {
-         await api.delete(`/api/msg/${selectedMsg.value.id}/hardDelete/`)
-         actionHappened.value = true
-         fetchHistMsg()
-         showBubbleActionContainer.value = false
-      } catch (e) {
-         $q.dialog({message: e.message})
-      }
-   })
-   
+  $q.dialog({
+    message: 'Are sure you want to perform this action, it is irreversible!',
+    ok: 'continue',
+    cancel: true,
+  }).onOk(async () => {
+    try {
+      await api.delete(`/api/msg/${selectedMsg.value.id}/hardDelete/`)
+      actionHappened.value = true
+      fetchHistMsg()
+      showBubbleActionContainer.value = false
+    } catch (e) {
+      $q.dialog({ message: e.message })
+    }
+  })
 }
-
 
 function editMsg() {
-   editMode.value = true
+  editMode.value = true
 }
-
-
 </script>
 
 <style scoped lang="scss">
@@ -1331,19 +1370,12 @@ function editMsg() {
 }
 
 .message-mine {
-  background-color: #e0f2f7; /* Light blue for my messages */
-  color: #333;
   border-bottom-right-radius: 1px;
 }
 
 /* Other User Messages */
 .message-other-wrapper {
   justify-content: flex-start; /* Align to the left */
-}
-
-.message-other {
-  background-color: #ffffff; /* White for other user messages */
-  color: #333;
 }
 
 /* System Messages */
@@ -1417,9 +1449,9 @@ function editMsg() {
   text-overflow: ellipsis; /* For long text replies */
   white-space: nowrap; /* Keep the content on a single line */
 
-   &:active {
-      background: #d5dada75;
-   }
+  &:active {
+    background: #d5dada75;
+  }
 }
 
 .reply-bubble .text-bold {
@@ -1632,24 +1664,22 @@ function editMsg() {
   white-space: normal;
 }
 
-
 .scale-down:active {
-   transform: scale(0.9);
+  transform: scale(0.9);
 }
 
 .highlight-msg {
-   background: #b1e4e475;
-   transition: background 0.5s linear;
+  background: #b1e4e475;
+  transition: background 0.5s linear;
 }
 
-
 .msg-in-edit-mode {
-   position: absolute;
-   bottom: 70px;
-   width: 100%;
-   padding: 10px;
-   z-index: 1001;
-   display: flex;
-   justify-content: space-between;
+  position: absolute;
+  bottom: 70px;
+  width: 100%;
+  padding: 10px;
+  z-index: 1001;
+  display: flex;
+  justify-content: space-between;
 }
 </style>

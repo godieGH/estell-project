@@ -22,3 +22,9 @@ html::-webkit-scrollbar,
 body::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
+
+.emoji {
+  height: 1em;
+  width: 1em;
+  vertical-align: -0.2em;
+}

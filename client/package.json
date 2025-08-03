@@ -33,6 +33,7 @@
     "register-service-worker": "^1.7.2",
     "socket.io-client": "^4.8.1",
     "textarea-caret": "^3.1.0",
+    "twemoji": "^14.0.2",
     "vue": "^3.4.18",
     "vue-router": "^4.0.0",
     "vue3-google-login": "^2.0.33"

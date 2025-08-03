@@ -39,7 +39,10 @@
               <i @click="hideChat()" class="q-pr-sm fas fa-chevron-left"></i>
               <q-skeleton v-if="!currentUserToDisplay" type="circle" size="45px" />
               <q-avatar v-else size="45px">
-                <img v-if="currentConversation.type === 'group'" :src="getAvatarSrc(currentConversation.groupAvatar)" />
+                <img
+                  v-if="currentConversation.type === 'group'"
+                  :src="getAvatarSrc(currentConversation.groupAvatar)"
+                />
                 <img v-else :src="getAvatarSrc(currentUserToDisplay.avatar)" />
               </q-avatar>
               <q-skeleton
@@ -61,7 +64,10 @@
             <div style="display: flex; align-items: center">
               <q-skeleton v-if="!currentUserToDisplay" type="circle" size="45px" />
               <q-avatar v-else size="45px">
-                <img v-if="currentConversation.type === 'group'" :src="getAvatarSrc(currentConversation.groupAvatar)" />
+                <img
+                  v-if="currentConversation.type === 'group'"
+                  :src="getAvatarSrc(currentConversation.groupAvatar)"
+                />
                 <img v-else :src="getAvatarSrc(currentUserToDisplay.avatar)" />
               </q-avatar>
               <q-skeleton
@@ -81,10 +87,12 @@
           </div>
 
           <div style="position: relative">
-            <ConvoThreads :currentConversation="currentConversation" @editMode="editMode" @msgToreply="loadMsgToReply" />
+            <ConvoThreads
+              :currentConversation="currentConversation"
+              @editMode="editMode"
+              @msgToreply="loadMsgToReply"
+            />
             <div style="position: absolute; bottom: 0; right: 0; width: 100%">
-              
-              
               <transition name="reply-bubble" appear>
                 <div v-if="msgToreply" class="reply-bubble">
                   <div class="text-caption text-blue-8 text-bold">
@@ -97,11 +105,14 @@
                     />
                   </div>
                   <div class="text-caption text-grey-7">
-                    <span v-if="msgToreply.content.text && !msgToreply.content.attachment" class="ellipsis-4-lines">{{ msgToreply.content.text }}</span>
+                    <span
+                      v-if="msgToreply.content.text && !msgToreply.content.attachment"
+                      class="ellipsis-4-lines"
+                      >{{ msgToreply.content.text }}</span
+                    >
 
                     <div
                       v-else-if="msgToreply.content.attachment_type === 'image'"
-                     
                       class="attachment-preview"
                     >
                       <img
@@ -109,8 +120,13 @@
                         alt="Image Preview"
                         class="image-preview"
                       />
-                      <span v-if="msgToreply.content.text" class="ellipsis-4-lines">{{ msgToreply.content.text }}</span>
-                      <span v-else>{{msgToreply.content.attachment_metadata.mimetype}} | {{formatFileSize(msgToreply.content.attachment_metadata.size)}}</span>
+                      <span v-if="msgToreply.content.text" class="ellipsis-4-lines">{{
+                        msgToreply.content.text
+                      }}</span>
+                      <span v-else
+                        >{{ msgToreply.content.attachment_metadata.mimetype }} |
+                        {{ formatFileSize(msgToreply.content.attachment_metadata.size) }}</span
+                      >
                     </div>
 
                     <div v-else-if="msgToreply.content.voice_note" class="voice-note">
@@ -124,13 +140,24 @@
                         class="attachment-icon"
                       />
                       <span>{{ getAttachmentLabel(msgToreply.content.attachment_type) }}</span>
-                      <span v-if="msgToreply.content.text" class="ellipsis-4-lines">{{msgToreply.content.text}}</span>
+                      <span v-if="msgToreply.content.text" class="ellipsis-4-lines">{{
+                        msgToreply.content.text
+                      }}</span>
                     </div>
                   </div>
                 </div>
               </transition>
 
-              <MessengerInput :messageToEdit="msgToEdit" :currentConversation="currentConversation" :messageToReplyTo="msgToreply" @discardTeplyTo="() => {msgToreply = null}" />
+              <MessengerInput
+                :messageToEdit="msgToEdit"
+                :currentConversation="currentConversation"
+                :messageToReplyTo="msgToreply"
+                @discardTeplyTo="
+                  () => {
+                    msgToreply = null
+                  }
+                "
+              />
             </div>
           </div>
         </div>
@@ -324,8 +351,8 @@ watch(
 
 const msgToEdit = ref(null)
 function editMode(msg) {
-   msgToEdit.value = msg
-   //console.log(msgToEdit.value)
+  msgToEdit.value = msg
+  //console.log(msgToEdit.value)
 }
 
 async function selectConversation(conversationId, type, retryCount = 0) {
@@ -753,7 +780,7 @@ const getAttachmentLabel = (type) => {
   border-left: 4px solid #1976d2; /* Blue border on the left */
   border-radius: 10px 10px 0 0;
   padding: 5px 8px;
-  margin: 20px 5px 0 5px ;
+  margin: 20px 5px 0 5px;
   font-size: 0.85em;
   box-shadow: 2px -1px 5px #1e1e1e;
 
@@ -803,5 +830,4 @@ const getAttachmentLabel = (type) => {
   -webkit-line-clamp: 4; /* This is the key property */
   white-space: normal;
 }
-
 </style>

@@ -1,9 +1,9 @@
 <template>
   <div
-    :style="{ 
+    :style="{
       background: isRecording ? 'transparent' : '',
-      zIndex: editMode?'1003':''
-      }"
+      zIndex: editMode ? '1003' : '',
+    }"
     class="chat-input-area"
     ref="chatInputAreaRef"
   >
@@ -87,14 +87,21 @@
           <i :class="readyToSendMsg ? '' : 'text-grey'" class="material-icons">attachment</i>
         </button>
       </div>
-      
-      <button v-if="!editMode" :class="{ 'text-green': hasTyped || hasAttachment }" class="send-button">
+
+      <button
+        v-if="!editMode"
+        :class="{ 'text-green': hasTyped || hasAttachment }"
+        class="send-button"
+      >
         <i :class="readyToSendMsg ? '' : 'text-grey'" class="material-icons" @click="sendMsg"
           >send</i
         >
       </button>
       <button v-else :class="{ 'text-green': hasTyped }" class="send-button">
-        <i :class="readyToSendMsg && messageToEdit?.content?.text !== message ? '' : 'text-grey'" class="material-icons" @click="sendEdit"
+        <i
+          :class="readyToSendMsg && messageToEdit?.content?.text !== message ? '' : 'text-grey'"
+          class="material-icons"
+          @click="sendEdit"
           >check</i
         >
       </button>
@@ -140,7 +147,7 @@
 </template>
 
 <script setup>
-import { watch, ref, reactive, onMounted, onUnmounted, nextTick, computed, toRaw} from 'vue'
+import { watch, ref, reactive, onMounted, onUnmounted, nextTick, computed, toRaw } from 'vue'
 import { useQuasar } from 'quasar'
 import { useUserStore } from 'stores/user'
 import { useMessageStore } from 'stores/messageStore'
@@ -156,20 +163,22 @@ const props = defineProps({
   messageToEdit: Object,
 })
 
-
 const editMode = ref(false)
-watch(() => props.messageToEdit, (newVal) => {
-   if(newVal != null) {
+watch(
+  () => props.messageToEdit,
+  (newVal) => {
+    if (newVal != null) {
       message.value = toRaw(newVal.content.text)
       editMode.value = true
       autoGrowTextarea()
-   } else {
+    } else {
       editMode.value = false
       message.value = null
       autoGrowTextarea()
       hasTyped.value = false
-   }
-})
+    }
+  },
+)
 
 const readyToSendMsg = ref(false)
 
@@ -198,9 +207,11 @@ const textareaRef = ref(null)
 const attachmentButtonRef = ref(null)
 const fabMenuRef = ref(null)
 const chatInputAreaRef = ref(null)
+const textAreaValue = ref(null)
 
 const autoGrowTextarea = () => {
   const textarea = textareaRef.value
+  textAreaValue.value = textarea.value
   hasTyped.value = textarea.value.length > 0
   if (textarea) {
     textarea.style.height = 'auto'
@@ -577,31 +588,29 @@ async function sendMsg() {
     attachment: hasAttachment.value ? { ...attachment.value } : null,
     fullAudioBlob: fullAudioBlob.value,
   }
-  
- 
-const { messageToReplyTo } = props;
-let reply_to_message_refined = null
 
-if(messageToReplyTo) {
-   reply_to_message_refined = {
-  id: toRaw(messageToReplyTo.id),
-  content: {
-    text: toRaw(messageToReplyTo.content.text),
-    attachment: toRaw(messageToReplyTo.content.attachment),
-    attachment_type: toRaw(messageToReplyTo.content.attachment_type),
-    voice_note: toRaw(messageToReplyTo.content.voice_note)
-  },
-  conversation_id: toRaw(messageToReplyTo.conversation_id),
-  isMine: toRaw(messageToReplyTo.isMine),
-  read_by: toRaw(messageToReplyTo.read_by),
-  sender: {
-    avatar: toRaw(messageToReplyTo.sender.avatar),
-    id: toRaw(messageToReplyTo.sender.id),
-    username: toRaw(messageToReplyTo.sender.username)
+  const { messageToReplyTo } = props
+  let reply_to_message_refined = null
+
+  if (messageToReplyTo) {
+    reply_to_message_refined = {
+      id: toRaw(messageToReplyTo.id),
+      content: {
+        text: toRaw(messageToReplyTo.content.text),
+        attachment: toRaw(messageToReplyTo.content.attachment),
+        attachment_type: toRaw(messageToReplyTo.content.attachment_type),
+        voice_note: toRaw(messageToReplyTo.content.voice_note),
+      },
+      conversation_id: toRaw(messageToReplyTo.conversation_id),
+      isMine: toRaw(messageToReplyTo.isMine),
+      read_by: toRaw(messageToReplyTo.read_by),
+      sender: {
+        avatar: toRaw(messageToReplyTo.sender.avatar),
+        id: toRaw(messageToReplyTo.sender.id),
+        username: toRaw(messageToReplyTo.sender.username),
+      },
+    }
   }
-}
-}
-
 
   const messageObj = {
     conversation: props.currentConversation,
@@ -613,7 +622,7 @@ if(messageToReplyTo) {
     read_by: [],
     queued: true,
     read_to: props.messageToReplyTo?.id || null,
-    reply_to_message: reply_to_message_refined  || null,
+    reply_to_message: reply_to_message_refined || null,
   }
 
   if (messageStore.queueMsg(messageObj)) {
@@ -625,27 +634,32 @@ if(messageToReplyTo) {
     emit('discardTeplyTo')
   }
   await messageStore.processAllQueuedMessages()
-  
 }
 
 async function sendEdit() {
-   if(message.value === props.messageToEdit || message.value.length === 0) return
-   const textarea = textareaRef.value
-   
-   try {
-       await api.post(`/api/msg/${props.messageToEdit.id}/edit`, {editText: message.value})
-       EventBus.emit('sent-edit')
-   } catch (e) {
-      $q.dialog({message: e.message})
-      console.error(e.message)
-   } finally {
-      textarea.style.height = "0"
-   }
+  if (message.value === props.messageToEdit || message.value.length === 0) return
+  const textarea = textareaRef.value
+
+  try {
+    await api.post(`/api/msg/${props.messageToEdit.id}/edit`, { editText: message.value })
+    EventBus.emit('sent-edit')
+  } catch (e) {
+    $q.dialog({ message: e.message })
+    console.error(e.message)
+  } finally {
+    textarea.style.height = '0'
+  }
 }
 
 function handleAreaFocus() {
   EventBus.emit('area-focus')
 }
+
+watch(textAreaValue, (a) => {
+   console.log(a)
+})
+
+
 </script>
 
 <style scoped lang="scss">

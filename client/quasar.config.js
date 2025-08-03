@@ -23,6 +23,7 @@ export default defineConfig((ctx) => {
       ctx.dev ? 'eruda' : null,
       'global-components',
       'context-menu-handle',
+      'twemoji',
     ],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css

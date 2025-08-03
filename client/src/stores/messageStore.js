@@ -208,12 +208,12 @@ export const useMessageStore = defineStore('messageStore', {
           // Remove from IndexedDB on successful send
           try {
             await db.queuedMessages.delete(msg.id)
-            
+
             //console.log(`Message ${msg.id} successfully sent and removed from IndexedDB.`)
           } catch (dbError) {
             console.error('Error removing message from IndexedDB:', dbError)
           }
-           //this.queued[index].id = response.serverMsgId
+          //this.queued[index].id = response.serverMsgId
           return true // Message sent, exit the function
         } else {
           throw new Error(`Failed to send message to server: ${response.error}`)

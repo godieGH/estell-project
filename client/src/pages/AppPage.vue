@@ -366,7 +366,7 @@
 
 <script setup>
 import LikersStackAvatar from '../components/misc/LikersStackAvatar.vue'
-import { ref, onMounted, computed, onBeforeUnmount, onUnmounted} from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount, onUnmounted } from 'vue'
 import { useFeedsStore } from 'stores/feedsStore'
 import { useUserStore } from 'stores/user'
 import CustomVideoPlayer from 'components/VideoPlayer.vue'
@@ -539,7 +539,7 @@ async function fetchPosts(isFirst = false, retryCount = 0) {
     }
   } catch (err) {
     console.error('Error fetching posts:', err.message)
-    if(isUnMounted) return
+    if (isUnMounted) return
     if (retryCount < 5) {
       console.log(`Retrying... Attempt ${retryCount + 1}`)
       await new Promise((resolve) => setTimeout(resolve, 2000)) // Wait for 2 seconds before retrying
@@ -547,8 +547,8 @@ async function fetchPosts(isFirst = false, retryCount = 0) {
     } else {
       console.error('Max retries reached. Giving up.')
       $q.dialog({
-           message: 'Server timeout! :)',
-         })
+        message: 'Server timeout! :)',
+      })
       error.value = true
     }
   } finally {
@@ -561,7 +561,7 @@ async function fetchPosts(isFirst = false, retryCount = 0) {
 }
 
 onUnmounted(() => {
-   isUnMounted = true
+  isUnMounted = true
 })
 
 onMounted(async () => {
