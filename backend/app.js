@@ -3,6 +3,7 @@ const http = require("http");
 require("dotenv").config();
 const cors = require("cors");
 const { Server } = require("socket.io");
+const { redis } = require('./utils/redis')
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
@@ -22,6 +23,7 @@ const io = new Server(server, {
 
 app.use((req, res, next) => {
   req.io = io;
+  req.redis = redis;
   next();
 });
 
@@ -49,7 +51,7 @@ io.on("connection", (socket) => {
     io.to(convoId).emit("someone_raed_msg", msgId);
   });
 
-  sendMessage(io, socket);
+  sendMessage(io, socket, redis);
 
   console.log(`A user connected with socket ID: ${socket.id}`);
   socket.on("disconnect", () => {

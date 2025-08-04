@@ -19,11 +19,8 @@ const {
   ReadStatus,
 } = require("../models");
 const { encrypt, decrypt } = require("../utils/encryption"); // Adjust path as needed
-const { redis } = require('../utils/redis')
-
 
 router.get("/", async (req, res) => {
-   await redis.ping()
 
   try {
     await sequelize.authenticate();
