@@ -258,6 +258,8 @@ function selectConversation(convo_id, type) {
 
 onMounted(() => {
   fetchConversation()
+  
+  messageStore.processAllQueuedMessages()
 
   socket.on('someone_raed_msg', fetchConversation)
 })
