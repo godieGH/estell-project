@@ -45,3 +45,6 @@ backend/uploads
 
 
 !backend/uploads/**/*.gitkeep
+
+
+dump.rdb

@@ -5,6 +5,7 @@
   "scripts": {
     "test": "jest",
     "pm2": "pm2 start app.js",
+    "redis": "redis-server --ignore-warnings ARM64-COW-BUG &",
     "dev": "node app",
     "start": "nodemon",
     "format": "prettier --write \"{api,middleware,controllers,routes,models,views}/**/*.{js,ejs}\" app.js"
@@ -32,6 +33,7 @@
     "fluent-ffmpeg": "^2.1.3",
     "helmet": "^8.1.0",
     "image-size": "^2.0.2",
+    "ioredis": "^5.7.0",
     "jsonwebtoken": "^9.0.2",
     "ml-distance": "^4.0.1",
     "ml-matrix": "^6.12.1",

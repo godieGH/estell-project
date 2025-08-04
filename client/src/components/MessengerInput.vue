@@ -661,7 +661,7 @@ function handleAreaFocus() {
 
 let typingTimeout = null;
 
-const TYPING_DELAY = 400; 
+const TYPING_DELAY = 1500; 
 
 watch(textAreaValue, (newValue) => {
   if(newValue.length > 0)

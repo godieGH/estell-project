@@ -9,6 +9,7 @@ const cookieParser = require("cookie-parser");
 const morgan = require("morgan");
 const port = process.env.SERVER_PORT;
 
+
 const app = express();
 const server = http.createServer(app);
 
@@ -113,6 +114,8 @@ app.use("/users", require("./routes/users"));
 app.use("/users", require("./routes/people"));
 app.use("/posts", require("./routes/posts"));
 app.use("/api", require("./routes/api"));
+
+app.use('/post', require("./routes/post"))
 
 server.listen(port, () => {
   console.log(`Server is running on port: ${port}`);
