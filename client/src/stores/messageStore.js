@@ -5,7 +5,7 @@ import { toRaw } from 'vue'
 import { useUserStore } from 'stores/user'
 import Dexie from 'dexie'
 
-const auth = useUserStore().token
+//const auth = useUserStore().token
 // Initialize Dexie database
 const db = new Dexie('MessageQueueDB')
 db.version(1).stores({
@@ -20,6 +20,7 @@ export const useMessageStore = defineStore('messageStore', {
       progress: null,
       messageClientId: null,
     },
+    isProcessingQueue: false
   }),
   actions: {
     async initializeStore() {
@@ -179,6 +180,8 @@ export const useMessageStore = defineStore('messageStore', {
           reply_to_message: msg.reply_to_message,
           client_message_id: msg.id,
         }
+        
+        const auth = useUserStore().token
 
         const response = await new Promise((resolve) => {
           socket.emit('sendMessage', messageToSend, auth, (res) => {
@@ -228,9 +231,12 @@ export const useMessageStore = defineStore('messageStore', {
       }
     },
     async processAllQueuedMessages($q = null) {
+      if(this.isProcessingQueue) return
+      
       const messagesToProcess = [...this.queued]
       for (const msg of messagesToProcess) {
         if (msg.queued) {
+           this.isProcessingQueue = true
           try {
             await this.sendQueued(msg)
           } catch (error) {
@@ -246,6 +252,8 @@ export const useMessageStore = defineStore('messageStore', {
           }
         }
       }
+      
+      this.isProcessingQueue = false;
     },
   },
 })
