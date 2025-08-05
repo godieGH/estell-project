@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
-    "test": "jest",
+    "test": "node __tests__/test.js",
     "pm2": "pm2 start app.js",
     "redis": "redis-server --ignore-warnings ARM64-COW-BUG &",
     "dev": "node app",

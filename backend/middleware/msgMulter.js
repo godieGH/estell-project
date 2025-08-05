@@ -229,6 +229,7 @@ exports.convertVideoToHLS = async function (
 
       ffmpeg(inputPath)
         .outputOptions([
+           "-y",
           "-c:v libx264",
           "-preset veryfast",
           "-crf 23",
@@ -319,3 +320,26 @@ exports.zipFile = function (filePath, outputDir, outputFileName) {
       .catch(reject); // Catch any error from mkdir and reject the promise
   });
 };
+
+
+
+
+exports.deleteFile = function(filePath) {
+  if (!filePath) {
+    console.error('deleteFile was called with a null or undefined path.');
+    return;
+  }
+  
+  fs.unlink(filePath, (err) => {
+    if (err) {
+      // Ignore "file not found" errors, as the goal is to ensure the file is gone.
+      if (err.code === 'ENOENT') {
+        console.log(`File not found, it may have already been deleted: ${filePath}`);
+      } else {
+        console.error(`Error deleting file: ${filePath}`, err);
+      }
+    } else {
+      console.log(`Successfully deleted file: ${filePath}`);
+    }
+  });
+}

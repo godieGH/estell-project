@@ -2,6 +2,8 @@
 **/*.thumbs.db
 **/*node_modules
 
+**/*__tests__
+
 # Quasar core related directories
 client/.quasar
 client/dist
@@ -45,6 +47,5 @@ backend/uploads
 
 
 !backend/uploads/**/*.gitkeep
-
 
 dump.rdb
