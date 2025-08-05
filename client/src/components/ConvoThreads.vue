@@ -580,6 +580,11 @@ onMounted(async () => {
     editMode.value = false
     showBubbleActionContainer.value = false
   })
+  //EventBus.on('textarea-on-focus', handleTextareaFocus)
+  
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', handleVisualViewportResize);
+  }
 
   if (messageStore.queued.length > 0) {
     const queuedMsgs = messageStore.queued.filter((msg) => {
@@ -829,6 +834,12 @@ onUnmounted(async () => {
     editMode.value = false
     showBubbleActionContainer.value = false
   })
+  //EventBus.off('textarea-on-focus', handleTextareaFocus)
+  
+  
+  if (window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', handleVisualViewportResize);
+  }
 })
 
 const unreadSeparatorMsgId = ref('123456')
@@ -900,55 +911,6 @@ const groupedMessages = computed(() => {
 
   return processed
 })
-
-const scrollTo = () => {
-  if (virtualScroll.value && groupedMessages.value.length > 0) {
-    if (isFirstMounted) {
-      const x = groupedMessages.value.findIndex((msg) => {
-        return msg.id === unreadSeparatorMsgId.value
-      })
-
-      if (x >= 0) {
-        virtualScroll.value.scrollTo(x, 'center')
-        isFirstMounted = false
-      } else {
-        virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
-      }
-      return
-    }
-    virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
-  }
-}
-const scrolledTo = ref(null)
-const scrollTimer = ref(null)
-function scrollToBottom() {
-  if (virtualScroll.value && groupedMessages.value.length > 0) {
-    if (newMsgAvailable.value) {
-      const msgIndex = groupedMessages.value.findIndex(
-        (msg) => msg.id === unreadSeparatorMsgId.value,
-      )
-      virtualScroll.value.scrollTo(msgIndex, 'center')
-    } else {
-      virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
-    }
-  }
-}
-function scrollToMsg(msgId) {
-  scrolledTo.value = null
-  scrollTimer.value = null
-  if (virtualScroll.value && groupedMessages.value.length > 0) {
-    const msgIndex = groupedMessages.value.findIndex((msg) => msg.id === msgId)
-    virtualScroll.value.scrollTo(msgIndex, 'center')
-    scrolledTo.value = {
-      state: true,
-      id: msgId,
-    }
-    scrollTimer.value = setTimeout(function () {
-      scrolledTo.value = null
-    }, 2500)
-  }
-}
-
 watch(
   groupedMessages,
   () => {
@@ -980,6 +942,94 @@ watch(
   },
   { deep: true },
 )
+
+const scrolledTo = ref(null)
+const scrollTimer = ref(null)
+const SCROLL_RESET_TIMEOUT_MS = 2500
+const initialViewportHeight = ref(window.visualViewport.height);
+
+const scrollTo = () => {
+  if (virtualScroll.value && groupedMessages.value.length > 0) {
+    if (isFirstMounted) {
+      const x = groupedMessages.value.findIndex((msg) => {
+        return msg.id === unreadSeparatorMsgId.value
+      })
+
+      if (x >= 0) {
+        virtualScroll.value.scrollTo(x, 'center')
+        isFirstMounted = false
+      } else {
+        virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
+      }
+      return
+    }
+    virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
+  }
+}
+function scrollToBottom() {
+  if (virtualScroll.value && groupedMessages.value.length > 0) {
+    if (newMsgAvailable.value) {
+      const msgIndex = groupedMessages.value.findIndex(
+        (msg) => msg.id === unreadSeparatorMsgId.value,
+      )
+      virtualScroll.value.scrollTo(msgIndex, 'center')
+    } else {
+      virtualScroll.value.scrollTo(groupedMessages.value.length - 1, 'start')
+    }
+  }
+}
+function scrollToMsg(msgId) {
+  // --- Improvement 1: Clear any existing timer ---
+  // This prevents a previous timeout from incorrectly resetting the state.
+  if (scrollTimer.value) {
+    clearTimeout(scrollTimer.value)
+  }
+  
+  // Reset state for the new scroll action
+  scrolledTo.value = null
+  scrollTimer.value = null
+
+  if (virtualScroll.value && groupedMessages.value.length > 0) {
+    const msgIndex = groupedMessages.value.findIndex((msg) => msg.id === msgId)
+
+    // --- Improvement 2: Check if the message was actually found ---
+    if (msgIndex > -1) {
+      // Scroll to the message's index
+      virtualScroll.value.scrollTo(msgIndex, 'center')
+      
+      // Update the state to indicate which message we scrolled to
+      scrolledTo.value = {
+        state: true,
+        id: msgId,
+      }
+
+      // Set a new timer to clear the scrolled state after a delay
+      scrollTimer.value = setTimeout(() => {
+        scrolledTo.value = null
+      }, SCROLL_RESET_TIMEOUT_MS) // <-- Improvement 3: Use the constant
+    } else {
+      // Optional: Log a warning if the message ID doesn't exist.
+      // This is very helpful for debugging.
+      console.warn(`[scrollToMsg] Message with ID "${msgId}" not found.`)
+    }
+  }
+}
+
+function handleVisualViewportResize() {
+  if(showGodownBtn.value) return
+  const newViewportHeight = window.visualViewport.height;
+  const keyboardThreshold = 100; // e.g., 100 pixels
+
+  if (initialViewportHeight.value - newViewportHeight > keyboardThreshold) {
+    nextTick(() => {
+      scrollToBottom();
+    });
+  } else {
+    initialViewportHeight.value = newViewportHeight;
+  }
+}
+
+
 
 const getIconForFileType = (metadata) => {
   if (!metadata) {
@@ -1435,6 +1485,7 @@ function createStatus({status, convoId, user, type}) {
       }
    }
 }
+
 </script>
 
 <style scoped lang="scss">
