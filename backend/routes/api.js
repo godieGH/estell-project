@@ -1401,7 +1401,8 @@ router.post(
             try {
               const pdfData = await pdfParse(fs.readFileSync(originalFilePath));
               metadata = { type: "document", subtype: "pdf", pages: pdfData.numpages, size: fileSize };
-            } catch (e) { metadata = { type: "document", subtype: "pdf", pages: null, size: fileSize, error: "Failed to parse PDF." }; }
+            // eslint-disable-next-line
+            } catch (e) { metadata = { type: "document", subtype: "pdf", pages: null, size: fileSize, error: `Failed to parse PDF.` }; }
           } else {
             metadata = { type: "application", subtype: path.extname(req.file.originalname).substring(1) || "unknown", mime_type: mimeType, size: fileSize };
           }

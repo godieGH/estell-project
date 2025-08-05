@@ -171,11 +171,11 @@ watch(
     if (newVal != null) {
       message.value = toRaw(newVal.content.text)
       editMode.value = true
-      autoGrowTextarea()
+      nextTick(autoGrowTextarea) // Use nextTick to ensure the DOM is updated before resizing
     } else {
       editMode.value = false
       message.value = null
-      autoGrowTextarea()
+      nextTick(autoGrowTextarea) // Use nextTick here as well
       hasTyped.value = false
     }
   },
@@ -212,12 +212,12 @@ const textAreaValue = ref(null)
 
 const autoGrowTextarea = () => {
   const textarea = textareaRef.value
+  if (!textarea) return // Add a guard clause
+  
   textAreaValue.value = textarea.value
   hasTyped.value = textarea.value.length > 0
-  if (textarea) {
-    textarea.style.height = 'auto'
-    textarea.style.height = `${textarea.scrollHeight}px`
-  }
+  textarea.style.height = 'auto' // Reset height to auto first
+  textarea.style.height = `${textarea.scrollHeight}px`
 }
 
 const toggleFabMenu = () => {
@@ -628,7 +628,7 @@ async function sendMsg() {
 
   if (messageStore.queueMsg(messageObj)) {
     message.value = null
-    autoGrowTextarea()
+    nextTick(autoGrowTextarea) // Call autoGrowTextarea after content is cleared
     hasTyped.value = false
     discardAttachment()
     fullAudioBlob.value = null
@@ -639,7 +639,7 @@ async function sendMsg() {
 
 async function sendEdit() {
   if (message.value === props.messageToEdit || message.value.length === 0) return
-  const textarea = textareaRef.value
+  
   clearTimeout(typingTimeout);
   
   try {
@@ -649,7 +649,9 @@ async function sendEdit() {
     $q.dialog({ message: e.message })
     console.error(e.message)
   } finally {
-    textarea.style.height = '0'
+    message.value = null // Clear the message value
+    editMode.value = false // Exit edit mode
+    nextTick(autoGrowTextarea) // Call autoGrowTextarea to reset the size
   }
 }
 
@@ -657,21 +659,17 @@ function handleAreaFocus() {
   EventBus.emit('textarea-on-focus')
 }
 
-
-
 let typingTimeout = null;
-
 const TYPING_DELAY = 1500; 
 
 watch(textAreaValue, (newValue) => {
-  if(newValue.length > 0)
-  clearTimeout(typingTimeout);
-
-  sendTypingStatus(true);
-
-  typingTimeout = setTimeout(() => {
-    sendTypingStatus(false);
-  }, TYPING_DELAY);
+  if(newValue && newValue.length > 0) { // Check for newValue existence
+    clearTimeout(typingTimeout);
+    sendTypingStatus(true);
+    typingTimeout = setTimeout(() => {
+      sendTypingStatus(false);
+    }, TYPING_DELAY);
+  }
 });
 watch(isRecording, (newValue) => {
    sendRecordingStatus(newValue)
@@ -684,13 +682,8 @@ function sendTypingStatus(isTyping) {
 function sendRecordingStatus(isRecording) {
   socket.emit('is_recording', {convoId: props.currentConversation.id, status: isRecording, user: {id: userStore.user.id, username: userStore.user.username, avatar: userStore.user.avatar}})
 }
-
-
-
-
-
-
 </script>
+
 
 <style scoped lang="scss">
 /* Existing styles */
