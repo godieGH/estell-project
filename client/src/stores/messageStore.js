@@ -113,6 +113,7 @@ export const useMessageStore = defineStore('messageStore', {
           const formData = new FormData()
           let uploadRoute = ''
           formData.append('conversation_id', msg.conversation_id)
+          formData.append('client_message_id', msg.id)
           this.currentUpload.messageClientId = msg.id
 
           if (msg._attachmentFile) {
@@ -181,7 +182,7 @@ export const useMessageStore = defineStore('messageStore', {
           client_message_id: msg.id,
         }
         
-        const auth = useUserStore().token
+        const auth = useUserStore().token;
 
         const response = await new Promise((resolve) => {
           socket.emit('sendMessage', messageToSend, auth, (res) => {
@@ -230,6 +231,7 @@ export const useMessageStore = defineStore('messageStore', {
         throw error // Re-throw the error to be caught by the caller
       }
     },
+    
     async processAllQueuedMessages($q = null) {
       if(this.isProcessingQueue) return
       

@@ -19,7 +19,7 @@ redis.on('connect', () => {
 async function connectRedis() {
   try {
     await redis.connect();
-   //console.log(await redis.ping());
+   console.log(await redis.ping());
   } catch (err) {
     console.error('Failed to connect to Redis:', err);
     // You might want to handle this error (e.g., exit the process, retry, etc.)

@@ -1071,6 +1071,7 @@ const {
   convertAudioToM4a,
   convertVideoToHLS,
   zipFile,
+  deleteFile,
 } = require("../middleware/msgMulter");
 function generateRandomAlphaNumeric(length = 8) {
   let result = "";
@@ -1120,39 +1121,159 @@ router.post(
   authenticateAccess,
   msgUploadAttachment.single("file"),
   async (req, res) => {
-    // If multer is successful, req.file will be available
+    const { client_message_id } = req.body;
+    const { redis } = req;
+    
+    // Safety check for multer upload success before touching Redis.
     if (!req.file) {
       return res.status(400).send({ error: "File upload failed." });
     }
 
-    if (req.file) {
-      const originalFilePath = req.file.path;
-      const fileUrl = `/uploads/messages/attachment/${req.body.conversation_id}/${req.file.filename}`;
+    let uploadStatus;
+    try {
+      uploadStatus = await redis.hGet(client_message_id, "status");
+    } catch (err) {
+      console.error("Redis connection error:", err);
+      // Redis is down. Treat this as if the key doesn't exist.
+      // The process will continue as a fresh upload.
+      uploadStatus = null; 
+    }
+    
+    // Case 1: Previous upload was a complete SUCCESS.
+    if (uploadStatus === "SUCCESS") {
+      // This new upload is a duplicate. Delete the new file and return the cached data.
+      deleteFile(req.file.path);
+      
+      let cachedUrl, cachedMetadata;
       try {
-        console.log(originalFilePath);
-        const dimensions = imageSize(readFileSync(originalFilePath));
-        const metadata = {
-          width: dimensions.width,
-          height: dimensions.height,
-          mimetype: req.file.mimetype,
-          size: req.file.size,
-          aspect_ratio: dimensions.width / dimensions.height,
-        };
-        res.status(200).json({
-          url: fileUrl,
-          attachment_metadata: metadata,
-        });
+        cachedUrl = await redis.hGet(client_message_id, "url");
+        cachedMetadata = await redis.hGet(client_message_id, "attachment_metadata");
       } catch (err) {
-        console.error("Error getting image dimensions:", err);
-        // Still send a success response, but without dimensions if it failed
-        res.status(200).json({
-          url: fileUrl,
-          attachment_metadata: {
-            mimetype: req.file.mimetype,
-            size: req.file.size,
-          },
+        // Cache read failed. This is a partial failure, but we have a new file.
+        // Proceed with the new file to satisfy the request.
+        console.error("Error reading from Redis cache. Proceeding with new upload.", err);
+        uploadStatus = null;
+      }
+      
+      // If we successfully retrieved data, return it.
+      if (cachedUrl && cachedMetadata) {
+        return res.status(200).json({
+          url: cachedUrl,
+          attachment_metadata: JSON.parse(cachedMetadata),
         });
       }
+    }
+
+    // Case 2: Previous upload was UPLOAD_COMPLETE, but needs a new attempt.
+    if (uploadStatus === "UPLOAD_COMPLETE") {
+      // The file was already uploaded in a previous attempt. Delete the new duplicate.
+      deleteFile(req.file.path);
+
+      let previousFile;
+      try {
+        previousFile = await redis.hGet(client_message_id, "file_data");
+        if (!previousFile) {
+          // Corrupted cache: status is UPLOAD_COMPLETE, but file_data is missing.
+          console.warn(`Corrupted Redis key: ${client_message_id}. Clearing and starting new process.`);
+          await redis.del(client_message_id); // Clean up the corrupted key.
+          uploadStatus = null; // Fall through to the fresh upload logic below.
+        } else {
+          // We have valid cached data for the previous file. Let's process it.
+          const originalFilePath = JSON.parse(previousFile).path;
+          const fileUrl = `/uploads/messages/attachment/${req.body.conversation_id}/${JSON.parse(previousFile).filename}`;
+
+          try {
+            const dimensions = imageSize(readFileSync(originalFilePath));
+            const metadata = {
+              width: dimensions.width,
+              height: dimensions.height,
+              mimetype: JSON.parse(previousFile).mimetype,
+              size: JSON.parse(previousFile).size,
+              aspect_ratio: dimensions.width / dimensions.height,
+            };
+            
+            // Update Redis to SUCCESS and return the final data.
+            await redis.hSet(client_message_id, "status", "SUCCESS");
+            await redis.hSet(client_message_id, "url", fileUrl);
+            await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(metadata));
+            
+            return res.status(200).json({
+              url: fileUrl,
+              attachment_metadata: metadata,
+            });
+          } catch (err) {
+            console.error("Error getting image dimensions during recovery:", err);
+            // The recovery process also failed. Status remains UPLOAD_COMPLETE.
+            return res.status(200).json({
+              url: fileUrl,
+              attachment_metadata: {
+                mimetype: JSON.parse(previousFile).mimetype,
+                size: JSON.parse(previousFile).size,
+              },
+            });
+          }
+        }
+      } catch (err) {
+        // Catch any error during the cache read or file access for the previous upload.
+        console.error(`Error during UPLOAD_COMPLETE recovery for key: ${client_message_id}.`, err);
+        // Fall through to the fresh upload logic below.
+        uploadStatus = null;
+      }
+    }
+
+    // Case 3: No status, FAILURE status, Redis is down, or cache data was corrupted.
+    // This is the fallback. Treat it as a fresh upload.
+    console.log(`Starting a new upload process for ${client_message_id}.`);
+    
+    // Multer has already succeeded at this point (due to the check at the start).
+    // Now, we proceed with the processing of the current file.
+    
+    // Set the initial status and store the file data.
+    try {
+      await redis.hSet(client_message_id, "status", "UPLOAD_COMPLETE");
+      await redis.hSet(client_message_id, "file_data", JSON.stringify(req.file));
+    } catch (err) {
+      console.error("Error setting initial Redis key. Process will continue without cache.", err);
+      // If setting the key fails, we just proceed. The deduplication won't work
+      // for this request, but the user will still get a response.
+    }
+    
+    const originalFilePath = req.file.path;
+    const fileUrl = `/uploads/messages/attachment/${req.body.conversation_id}/${req.file.filename}`;
+    
+    try {
+      const dimensions = imageSize(readFileSync(originalFilePath));
+      const metadata = {
+        width: dimensions.width,
+        height: dimensions.height,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        aspect_ratio: dimensions.width / dimensions.height,
+      };
+      
+      // The process is a complete success. Update Redis.
+      try {
+        await redis.hSet(client_message_id, "status", "SUCCESS");
+        await redis.hSet(client_message_id, "url", fileUrl);
+        await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(metadata));
+      } catch (err) {
+        console.error("Error updating Redis for SUCCESS status. Proceeding with response.", err);
+      }
+      
+      return res.status(200).json({
+        url: fileUrl,
+        attachment_metadata: metadata,
+      });
+    } catch (err) {
+      console.error("Error getting image dimensions:", err);
+      // The status remains UPLOAD_COMPLETE (if Redis worked initially).
+      return res.status(200).json({
+        url: fileUrl,
+        attachment_metadata: {
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+        },
+      });
     }
   },
 );
@@ -1162,321 +1283,355 @@ router.post(
   authenticateAccess,
   msgUploadAttachment.single("file"),
   async (req, res) => {
+    const { client_message_id } = req.body;
+    const { redis } = req;
+
     if (!req.file) {
       return res.status(400).json({ error: "File upload failed." });
     }
 
-    let metadata = null;
-    const filePath = req.file.path;
-    const mimeType = req.file.mimetype;
-    const fileSize = req.file.size;
-    const conversationId = req.body.conversation_id;
-
-    let finalFileUrl = null;
-    let finalFilePath = filePath; // This will hold the path to the file we'll provide metadata for
-
-    // Define MIME types that should NOT be zipped and should be processed directly
-    const unzippedMimeTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "video/mp4",
-      "video/webm",
-      "video/3gpp",
-      "video/avi",
-      "video/x-flv",
-      "video/x-matroska",
-      "video/quicktime",
-      "audio/mpeg",
-      "audio/ogg",
-      "audio/aac",
-      "audio/x-m4a",
-      "audio/mp4",
-      "audio/amr",
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-powerpoint",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      "text/plain",
-      "text/csv",
-      "application/json",
-      "text/html",
-      "application/xml",
-    ];
-
+    let uploadStatus;
     try {
-      // Check if the current file's MIME type is among those that should NOT be zipped
-      if (unzippedMimeTypes.includes(mimeType)) {
-        // Logic for files that should NOT be zipped (original processing)
-        if (mimeType.startsWith("image/")) {
-          // Your existing image metadata extraction logic
-          try {
-            const probeData = await getProbeData(filePath);
-            const imageStream = probeData.streams.find(
-              (stream) => stream.codec_type === "video",
-            );
-            if (imageStream) {
-              metadata = {
-                type: "image",
-                mime_type: mimeType,
-                width: imageStream.width,
-                height: imageStream.height,
-                codec: imageStream.codec_name,
-                size: fileSize,
-              };
-            } else {
-              const dimensions = imageSize(readFileSync(filePath));
-              metadata = {
-                type: "image",
-                mime_type: mimeType,
-                width: dimensions.width,
-                height: dimensions.height,
-                size: fileSize,
-              };
-            }
-          } catch (err) {
-            // Fallback for image processing if probe fails
-            console.error("Error getting image dimensions/probe:", err);
-            const dimensions = imageSize(readFileSync(filePath));
-            metadata = {
-              type: "image",
-              mime_type: mimeType,
-              width: dimensions.width,
-              height: dimensions.height,
-              size: fileSize,
-            };
-          }
-        } else if (mimeType.startsWith("video/")) {
-          // Your existing video metadata extraction logic
-          const probeData = await getProbeData(filePath);
-          const { format, streams } = probeData;
-          const videoStream = streams.find(
-            (stream) => stream.codec_type === "video",
-          );
-          const audioStream = streams.find(
-            (stream) => stream.codec_type === "audio",
-          );
-          metadata = {
-            type: "video",
-            mime_type: mimeType,
-            duration: parseFloat(format.duration),
-            bit_rate: parseInt(format.bit_rate),
-            size: fileSize,
-          };
-          if (videoStream) {
-            metadata.width = videoStream.width;
-            metadata.height = videoStream.height;
-            metadata.avg_frame_rate = videoStream.avg_frame_rate
-              ? eval(videoStream.avg_frame_rate)
-              : null;
-            metadata.aspect_ratio = videoStream.display_aspect_ratio;
-            metadata.video_codec = videoStream.codec_name;
-            metadata.pixel_format = videoStream.pix_fmt;
-          }
-          if (audioStream) {
-            metadata.audio_codec = audioStream.codec_name;
-            metadata.audio_bit_rate = parseInt(audioStream.bit_rate);
-            metadata.sample_rate = parseInt(audioStream.sample_rate);
-            metadata.channels = audioStream.channels;
-          }
-        } else if (mimeType.startsWith("audio/")) {
-          // Your existing audio metadata extraction logic
-          const probeData = await getProbeData(filePath);
-          const { format, streams } = probeData;
-          const audioStream = streams.find(
-            (stream) => stream.codec_type === "audio",
-          );
-          metadata = {
-            type: "audio",
-            mime_type: mimeType,
-            duration: parseFloat(format.duration),
-            bit_rate: parseInt(format.bit_rate),
-            size: fileSize,
-            codec: audioStream?.codec_name,
-            sample_rate: audioStream ? parseInt(audioStream.sample_rate) : null,
-            channels: audioStream?.channels,
-          };
-        } else if (mimeType === "application/pdf") {
-          // Your existing PDF metadata extraction logic
-          try {
-            const dataBuffer = fs.readFileSync(filePath);
-            const pdfData = await pdfParse(dataBuffer);
-            metadata = {
-              type: "document",
-              subtype: "pdf",
-              pages: pdfData.numpages,
-              size: fileSize,
-            };
-          } catch (parseError) {
-            console.error("Error parsing PDF metadata:", parseError);
-            metadata = {
-              type: "document",
-              subtype: "pdf",
-              pages: null,
-              size: fileSize,
-              error: "Failed to parse PDF metadata.",
-            };
-          }
-        } else if (mimeType.startsWith("text/")) {
-          // This will now catch text/plain, text/csv, application/json, text/html, application/xml
-          // Your existing text metadata extraction logic
-          const fileContent = fs.readFileSync(filePath, "utf-8");
-          const lines = fileContent.split("\n").length;
-          const words = fileContent
-            .split(/\s+/)
-            .filter((word) => word.length > 0).length;
-          const characters = fileContent.length;
-          metadata = {
-            type: "text",
-            mime_type: mimeType,
-            lines: lines,
-            words: words,
-            characters: characters,
-            size: fileSize,
-          };
-        } else {
-          const fileStats = fs.statSync(filePath);
-          const subtype =
-            path.extname(req.file.originalname).substring(1) || "unknown";
-          metadata = {
-            type: "application",
-            subtype,
-            mime_type: mimeType,
-            size: fileSize,
-            created_at: fileStats.birthtime,
-            modified_at: fileStats.mtime,
-          };
+      uploadStatus = await redis.hGet(client_message_id, "status");
+    } catch (err) {
+      console.error("Redis connection error, proceeding without cache:", err);
+      uploadStatus = null; // Fallback to fresh upload logic.
+    }
+
+    // --- Case 1: Deduplication - The process was a complete SUCCESS.
+    if (uploadStatus === "SUCCESS") {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error("Error deleting duplicate file:", err);
+      });
+      try {
+        const cachedUrl = await redis.hGet(client_message_id, "url");
+        const cachedMetadata = await redis.hGet(client_message_id, "attachment_metadata");
+        if (cachedUrl && cachedMetadata) {
+          return res.status(200).json({
+            url: cachedUrl,
+            attachment_metadata: JSON.parse(cachedMetadata),
+          });
         }
-        finalFileUrl = `/uploads/messages/attachment/${conversationId}/${req.file.filename}`;
-      } else {
-        // THIS IS WHERE WE HANDLE FILES THAT ARE NOT IN unzippedMimeTypes (i.e., they should be zipped)
-        console.log(`File type not in unzippedMimeTypes, zipping: ${mimeType}`);
-
-        const zipRelativeOutputDir = path.join(
-          "messages",
-          "attachment",
-          conversationId,
-        );
-        const zipAbsoluteOutputDir = path.join(
-          __dirname,
-          "..",
-          BASE_UPLOAD_DIR,
-          zipRelativeOutputDir,
-        );
-        const zipFileName = `${req.userId}-file-${generateRandomAlphaNumeric()}`;
-
-        const zippedFilePath = await zipFile(
-          filePath,
-          zipAbsoluteOutputDir,
-          zipFileName,
-        );
-        finalFilePath = zippedFilePath; // Update the path for metadata processing
-
-        // Delete the original uploaded file after zipping
-        fs.unlink(filePath, (err) => {
-          if (err)
-            console.error(
-              "Error deleting original unsupported file after zipping:",
-              err,
-            );
-        });
-
-        const zippedFileRelativePath = path.relative(
-          path.join(__dirname, "..", BASE_UPLOAD_DIR),
-          zippedFilePath,
-        );
-        finalFileUrl = `/${BASE_UPLOAD_DIR}/${zippedFileRelativePath.replace(/\\/g, "/")}`;
-
-        const fileStats = fs.statSync(finalFilePath); // Get stats of the zipped file
-        metadata = {
-          type: "application",
-          subtype: "zip",
-          mime_type: "application/zip",
-          original_mime_type: mimeType, // Keep track of the original type
-          original_filename: req.file.originalname,
-          size: fileStats.size, // Use the size of the zipped file
-          created_at: fileStats.birthtime,
-          modified_at: fileStats.mtime,
-        };
-      }
-    } catch (error) {
-      console.error("Error processing file metadata or zipping:", error);
-      // If an error occurred during processing, try to clean up the original file
-      if (finalFilePath === filePath && fs.existsSync(filePath)) {
-        fs.unlink(filePath, (err) => {
-          if (err) console.error("Error deleting original file on error:", err);
-        });
-      }
-      metadata = {
-        type: "unknown",
-        mime_type: mimeType,
-        size: fileSize, // Use original fileSize as processing failed
-        error: error.message,
-      };
-      // Even if there's an error, try to provide a URL to the original (if not zipped)
-      if (!finalFileUrl) {
-        finalFileUrl = `/uploads/messages/attachment/${conversationId}/${req.file.filename}`;
+      } catch (err) {
+        console.error("Error retrieving SUCCESS cache data, falling through.", err);
+        uploadStatus = null;
       }
     }
 
-    res.status(200).json({ url: finalFileUrl, attachment_metadata: metadata });
+    let originalFilePath;
+
+    if (uploadStatus) {
+      // It's a recovery attempt. Delete the new file and get the path of the original.
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error("Error deleting duplicate file during recovery:", err);
+      });
+
+      try {
+        const cachedFileData = await redis.hGet(client_message_id, "file_data");
+        if (cachedFileData) {
+          originalFilePath = JSON.parse(cachedFileData).path;
+        } else {
+          console.warn("Corrupted cache, status exists but no file_data. Falling back to new file.");
+          originalFilePath = req.file.path;
+          uploadStatus = null;
+        }
+      } catch (err) {
+        console.error("Error during recovery cache read. Falling back to new file.", err);
+        originalFilePath = req.file.path;
+        uploadStatus = null;
+      }
+    } else {
+      // It's a fresh upload. The file is at req.file.path.
+      originalFilePath = req.file.path;
+      try {
+        await redis.hSet(client_message_id, "status", "UPLOAD_COMPLETE");
+        await redis.hSet(client_message_id, "file_data", JSON.stringify(req.file));
+      } catch (err) {
+        console.error("Error setting initial Redis key. Process continues without cache.", err);
+      }
+    }
+    
+    // --- Processing Logic (Fresh Upload or Recovery) ---
+    const conversationId = req.body.conversation_id;
+    const mimeType = req.file.mimetype;
+    const fileSize = req.file.size;
+    let metadata = null;
+    let finalFileUrl = null;
+    let finalFilePath = originalFilePath;
+
+    // Define MIME types that should NOT be zipped
+    const unzippedMimeTypes = [
+      "image/jpeg", "image/png", "image/gif", "image/webp",
+      "video/mp4", "video/webm", "video/3gpp", "video/avi", "video/x-flv", "video/x-matroska", "video/quicktime",
+      "audio/mpeg", "audio/ogg", "audio/aac", "audio/x-m4a", "audio/mp4", "audio/amr",
+      "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "text/plain", "text/csv", "application/json", "text/html", "application/xml",
+    ];
+
+    try {
+      // Check if we need to run processing or can just use cached metadata
+      if (uploadStatus === "METADATA_EXTRACTED") {
+        metadata = JSON.parse(await redis.hGet(client_message_id, "attachment_metadata"));
+        // Final URL can be reconstructed from cached data
+        if (metadata.type === "application" && metadata.subtype === "zip") {
+            finalFileUrl = metadata.url; // Use cached URL for zipped files
+        } else {
+            finalFileUrl = `/uploads/messages/attachment/${conversationId}/${path.basename(originalFilePath)}`;
+        }
+      } else { // Fresh processing or recovering from UPLOAD_COMPLETE
+        if (unzippedMimeTypes.includes(mimeType)) {
+          // --- Unzipped File Logic ---
+          if (mimeType.startsWith("image/")) {
+            const probeData = await getProbeData(originalFilePath);
+            const imageStream = probeData.streams.find((stream) => stream.codec_type === "video");
+            metadata = imageStream ? { type: "image", mime_type: mimeType, width: imageStream.width, height: imageStream.height, size: fileSize } : { type: "image", mime_type: mimeType, width: imageSize(readFileSync(originalFilePath)).width, height: imageSize(readFileSync(originalFilePath)).height, size: fileSize };
+          } else if (mimeType.startsWith("video/")) {
+            const probeData = await getProbeData(originalFilePath);
+            const { format, streams } = probeData;
+            const videoStream = streams.find((stream) => stream.codec_type === "video");
+            metadata = { type: "video", mime_type: mimeType, duration: parseFloat(format.duration), bit_rate: parseInt(format.bit_rate), size: fileSize, width: videoStream?.width, height: videoStream?.height };
+          } else if (mimeType.startsWith("audio/")) {
+            const probeData = await getProbeData(originalFilePath);
+            const { format, streams } = probeData;
+            const audioStream = streams.find((stream) => stream.codec_type === "audio");
+            metadata = { type: "audio", mime_type: mimeType, duration: parseFloat(format.duration), bit_rate: parseInt(format.bit_rate), size: fileSize, codec: audioStream?.codec_name };
+          } else if (mimeType === "application/pdf") {
+            try {
+              const pdfData = await pdfParse(fs.readFileSync(originalFilePath));
+              metadata = { type: "document", subtype: "pdf", pages: pdfData.numpages, size: fileSize };
+            } catch (e) { metadata = { type: "document", subtype: "pdf", pages: null, size: fileSize, error: "Failed to parse PDF." }; }
+          } else {
+            metadata = { type: "application", subtype: path.extname(req.file.originalname).substring(1) || "unknown", mime_type: mimeType, size: fileSize };
+          }
+          finalFileUrl = `/uploads/messages/attachment/${conversationId}/${path.basename(originalFilePath)}`;
+
+          // Update cache with metadata
+          try {
+            await redis.hSet(client_message_id, "status", "METADATA_EXTRACTED");
+            await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(metadata));
+          } catch (e) { console.error("Error caching metadata:", e); }
+
+        } else {
+          // --- Zipped File Logic ---
+          console.log(`File type not in unzippedMimeTypes, zipping: ${mimeType}`);
+          const zipRelativeOutputDir = path.join("messages", "attachment", conversationId);
+          const zipAbsoluteOutputDir = path.join(__dirname, "..", BASE_UPLOAD_DIR, zipRelativeOutputDir);
+          const zipFileName = `${client_message_id}.zip`;
+          const zippedFilePath = await zipFile(originalFilePath, zipAbsoluteOutputDir, zipFileName);
+          
+          finalFilePath = zippedFilePath;
+          fs.unlink(originalFilePath, (err) => { if (err) console.error("Error deleting original file after zipping:", err); });
+
+          const zippedFileRelativePath = path.relative(path.join(__dirname, "..", BASE_UPLOAD_DIR), zippedFilePath);
+          finalFileUrl = `/${BASE_UPLOAD_DIR}/${zippedFileRelativePath.replace(/\\/g, "/")}`;
+
+          const fileStats = fs.statSync(finalFilePath);
+          metadata = {
+            type: "application", subtype: "zip", mime_type: "application/zip",
+            original_mime_type: mimeType, original_filename: req.file.originalname,
+            size: fileStats.size, created_at: fileStats.birthtime, modified_at: fileStats.mtime,
+          };
+          
+          // Update cache with final zipped data
+          try {
+            await redis.hSet(client_message_id, "status", "ZIP_CONVERSION_COMPLETE");
+            await redis.hSet(client_message_id, "url", finalFileUrl);
+            await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(metadata));
+          } catch (e) { console.error("Error caching zip data:", e); }
+        }
+      }
+
+      // Final step: If metadata was extracted but we haven't hit SUCCESS yet,
+      // update the state and send the final response.
+      if (uploadStatus !== "SUCCESS") {
+        try {
+          // For unzipped files, the final URL is only determined here.
+          if (!finalFileUrl) {
+              finalFileUrl = `/uploads/messages/attachment/${conversationId}/${path.basename(finalFilePath)}`;
+          }
+          await redis.hSet(client_message_id, "status", "SUCCESS");
+          await redis.hSet(client_message_id, "url", finalFileUrl);
+          if (metadata) {
+              await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(metadata));
+          }
+        } catch (e) {
+          console.error("Error setting final SUCCESS state:", e);
+        }
+      }
+
+      return res.status(200).json({ url: finalFileUrl, attachment_metadata: metadata });
+
+    } catch (error) {
+      console.error("Error processing file:", error);
+      // Clean up the original file if an error occurred before zipping.
+      if (finalFilePath === originalFilePath && fs.existsSync(originalFilePath)) {
+        fs.unlink(originalFilePath, (err) => {
+          if (err) console.error("Error deleting original file on error:", err);
+        });
+      }
+      return res.status(500).json({ error: "File processing failed." });
+    }
   },
 );
+
 
 router.post(
   "/upload/voice-note",
   authenticateAccess,
   msgUploadVoiceNote.single("audio"),
   async (req, res) => {
+    const { client_message_id } = req.body;
+    const { redis } = req;
+    
+    // Safety check for Multer upload success.
+    if (!req.file) {
+      // If Multer fails, this request cannot be fulfilled.
+      return res.status(400).json({ message: "No file uploaded." });
+    }
+
+    let uploadStatus;
     try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded." });
+      uploadStatus = await redis.hGet(client_message_id, "status");
+    } catch (err) {
+      console.error("Redis connection error, proceeding without cache:", err);
+      uploadStatus = null; // Fallback to fresh upload logic.
+    }
+
+    // --- State-based Logic ---
+
+    // Case 1: The entire process was a complete SUCCESS on a previous attempt.
+    if (uploadStatus === "SUCCESS") {
+      // This is a duplicate request. Delete the new file and return cached data.
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error("Error deleting duplicate file:", err);
+      });
+      
+      let cachedUrl;
+      try {
+        cachedUrl = await redis.hGet(client_message_id, "url");
+        if (cachedUrl) {
+          return res.status(200).json({
+            message: "Voice note already uploaded and converted.",
+            url: cachedUrl,
+          });
+        }
+      } catch (err) {
+        console.error("Error reading from Redis during SUCCESS check. Falling back.", err);
+        uploadStatus = null;
       }
+    }
+    
+    // Case 2: Recovery State - The initial file was uploaded, but the conversion failed or the server crashed.
+    // The previous request left the original file on disk. We must process that one.
+    if (uploadStatus === "UPLOAD_COMPLETE") {
+        
+        // This is a duplicate request. Delete the newly uploaded file.
+        fs.unlink(req.file.path, (err) => {
+            if (err) console.error("Error deleting duplicate file during recovery:", err);
+        });
 
-      const conversationId = req.body.conversation_id;
-      const originalFilePath = req.file.path;
+        // Get the original file path from the cache to continue processing.
+        let previousFileData;
+        try {
+            previousFileData = await redis.hGet(client_message_id, "file_data");
+            if (!previousFileData) {
+                // Corrupted cache: status says UPLOAD_COMPLETE but no file data.
+                console.warn(`Corrupted Redis key: ${client_message_id}. Deleting key and starting fresh.`);
+                await redis.del(client_message_id);
+                uploadStatus = null; // Fall through to the fresh upload logic.
+            }
+        } catch (err) {
+            console.error("Error retrieving cached file data. Falling back to fresh upload.", err);
+            uploadStatus = null;
+        }
 
-      const m4aRelativeOutputDir = path.join(
-        "messages",
-        "voice_notes",
-        "m4a",
-        conversationId,
-      );
-      const m4aAbsoluteOutputDir = path.join(
-        __dirname,
-        "..",
-        BASE_UPLOAD_DIR,
-        m4aRelativeOutputDir,
-      );
-      const m4aFileName = `${req.userId}-voice-${generateRandomAlphaNumeric()}`;
+        if (uploadStatus === "UPLOAD_COMPLETE" && previousFileData) {
+            const originalFile = JSON.parse(previousFileData);
+            const originalFilePath = originalFile.path;
 
-      await fs.promises.mkdir(m4aAbsoluteOutputDir, { recursive: true });
+            const conversationId = req.body.conversation_id;
+            const m4aRelativeOutputDir = path.join("messages", "voice_notes", "m4a", conversationId);
+            const m4aAbsoluteOutputDir = path.join(__dirname, "..", BASE_UPLOAD_DIR, m4aRelativeOutputDir);
+            const m4aFileName = `${originalFile.filename.split('.')[0]}`; // Use original filename base.
 
-      await convertAudioToM4a(
-        originalFilePath,
-        m4aAbsoluteOutputDir,
-        m4aFileName,
-      );
-      const convertedM4aRelativePath = path.join(
-        m4aRelativeOutputDir,
-        m4aFileName,
-      );
+            try {
+                await fs.promises.mkdir(m4aAbsoluteOutputDir, { recursive: true });
+                await convertAudioToM4a(originalFilePath, m4aAbsoluteOutputDir, m4aFileName);
 
-      fs.unlink(originalFilePath, (err) => {
-        if (err) console.error("Error deleting original voice note file:", err);
-      });
+                const convertedM4aRelativePath = path.join(m4aRelativeOutputDir, `${m4aFileName}.m4a`);
 
-      res.status(200).json({
-        message: "Voice note uploaded and converted to M4A successfully",
-        url: `/${BASE_UPLOAD_DIR}/${convertedM4aRelativePath.replace(/\\/g, "/")}.m4a`,
-      });
-    } catch (error) {
-      console.error("Voice note upload/conversion error:", error);
-      res.status(500).json({ message: error.message });
+                // Clean up the original file now that conversion is complete.
+                fs.unlink(originalFilePath, (err) => {
+                    if (err) console.error("Error deleting original voice note file after conversion:", err);
+                });
+
+                // Update Redis to SUCCESS with the final URL.
+                const finalUrl = `/${BASE_UPLOAD_DIR}/${convertedM4aRelativePath.replace(/\\/g, "/")}`;
+                await redis.hSet(client_message_id, "status", "SUCCESS");
+                await redis.hSet(client_message_id, "url", finalUrl);
+
+                return res.status(200).json({
+                    message: "Voice note recovered and converted to M4A successfully",
+                    url: finalUrl,
+                });
+            } catch (error) {
+                console.error("Voice note recovery/conversion error:", error);
+                // The status remains UPLOAD_COMPLETE, ready for another attempt.
+                return res.status(500).json({ message: "Error during voice note conversion recovery." });
+            }
+        }
+    }
+
+    // Case 3: Fresh Upload - No status, a failure, or cache was unreadable/corrupted.
+    if (!uploadStatus || uploadStatus === "FAILURE") {
+        console.log(`Starting new voice note process for ${client_message_id}`);
+        const { path: originalFilePath } = req.file;
+
+        try {
+            // Set initial status and store the file data.
+            await redis.hSet(client_message_id, "status", "UPLOAD_COMPLETE");
+            await redis.hSet(client_message_id, "file_data", JSON.stringify(req.file));
+        } catch (err) {
+            console.error("Error setting initial Redis key. Process will continue without cache.", err);
+        }
+
+        const conversationId = req.body.conversation_id;
+        const m4aRelativeOutputDir = path.join("messages", "voice_notes", "m4a", conversationId);
+        const m4aAbsoluteOutputDir = path.join(__dirname, "..", BASE_UPLOAD_DIR, m4aRelativeOutputDir);
+        const m4aFileName = `${req.userId}-voice-${generateRandomAlphaNumeric()}`;
+
+        try {
+            await fs.promises.mkdir(m4aAbsoluteOutputDir, { recursive: true });
+            await convertAudioToM4a(originalFilePath, m4aAbsoluteOutputDir, m4aFileName);
+
+            const convertedM4aRelativePath = path.join(m4aRelativeOutputDir, `${m4aFileName}.m4a`);
+            
+            // Clean up the original file after successful conversion.
+            fs.unlink(originalFilePath, (err) => {
+                if (err) console.error("Error deleting original voice note file after conversion:", err);
+            });
+
+            // The process is a complete success. Update Redis with final data.
+            const finalUrl = `/${BASE_UPLOAD_DIR}/${convertedM4aRelativePath.replace(/\\/g, "/")}`;
+            try {
+                await redis.hSet(client_message_id, "status", "SUCCESS");
+                await redis.hSet(client_message_id, "url", finalUrl);
+            } catch (err) {
+                console.error("Error updating Redis for SUCCESS status. Proceeding with response.", err);
+            }
+
+            return res.status(200).json({
+                message: "Voice note uploaded and converted to M4A successfully",
+                url: finalUrl,
+            });
+        } catch (error) {
+            console.error("Voice note upload/conversion error:", error);
+            // Conversion failed. The status is already UPLOAD_COMPLETE, which is correct.
+            // The unconverted file remains on disk for a future recovery attempt.
+            return res.status(500).json({ message: "Error during voice note conversion." });
+        }
     }
   },
 );
@@ -1486,66 +1641,133 @@ router.post(
   authenticateAccess,
   msgUploadAttachment.single("file"),
   async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded." });
-      }
+    const { client_message_id } = req.body;
+    const { redis } = req;
 
-      const conversationId = req.body.conversation_id;
-      const originalFilePath = req.file.path;
-      let attachmentMetadata = null;
+    // Safety check for multer upload success.
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded." });
+    }
+
+    let uploadStatus;
+    try {
+      uploadStatus = await redis.hGet(client_message_id, "status");
+    } catch (err) {
+      console.error("Redis connection error, proceeding without cache:", err);
+      uploadStatus = null; // Fallback to fresh upload logic.
+    }
+
+    // --- Case 1: Deduplication - The process was a complete SUCCESS.
+    if (uploadStatus === "SUCCESS") {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error("Error deleting duplicate file:", err);
+      });
+      try {
+        const cachedUrl = await redis.hGet(client_message_id, "url");
+        const cachedMetadata = await redis.hGet(client_message_id, "attachment_metadata");
+        if (cachedUrl && cachedMetadata) {
+          return res.status(200).json({
+            message: "Attachment already processed successfully",
+            url: cachedUrl,
+            attachment_metadata: JSON.parse(cachedMetadata),
+          });
+        }
+      } catch (err) {
+        console.error("Error retrieving SUCCESS cache data, falling through.", err);
+        // Fall through to the processing block if cache read fails.
+        uploadStatus = null;
+      }
+    }
+
+    // --- Case 2: Fresh Upload or Recovery (Start Processing) ---
+    // If we reach here, it's either a fresh upload or a recovery attempt.
+    
+    let originalFilePath;
+
+    if (uploadStatus) {
+      // It's a recovery attempt. Delete the new file and get the path of the original one.
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error("Error deleting duplicate file during recovery:", err);
+      });
 
       try {
-        const originalProbedData = await getProbeData(originalFilePath);
-        const videoStream = originalProbedData.streams.find(
-          (s) => s.codec_type === "video",
-        );
-
-        attachmentMetadata = {
-          width: videoStream ? videoStream.width : null,
-          height: videoStream ? videoStream.height : null,
-          duration: originalProbedData.format.duration,
-          size: originalProbedData.format.size,
-          mimetype: req.file.mimetype,
-          bit_rate: originalProbedData.format.bit_rate,
-          avg_frame_rate: videoStream ? videoStream.avg_frame_rate : null,
-          display_aspect_ratio: videoStream
-            ? videoStream.width / videoStream.height
-            : null,
-          is_hls_converted: false,
-        };
+        const cachedFileData = await redis.hGet(client_message_id, "file_data");
+        if (cachedFileData) {
+          originalFilePath = JSON.parse(cachedFileData).path;
+        } else {
+          console.warn("Corrupted cache, status exists but no file_data. Falling back to new file.");
+          originalFilePath = req.file.path;
+          // Treat as a fresh upload to re-cache the data.
+          uploadStatus = null; 
+        }
       } catch (err) {
-        console.error("FFprobe error on original file:", err.message);
-        attachmentMetadata = null;
+        console.error("Error during recovery cache read. Falling back to new file.", err);
+        originalFilePath = req.file.path;
+        uploadStatus = null;
       }
+    } else {
+      // It's a fresh upload. The file is already available at req.file.path.
+      originalFilePath = req.file.path;
+      // Set the initial state in Redis.
+      try {
+        await redis.hSet(client_message_id, "status", "UPLOAD_COMPLETE");
+        await redis.hSet(client_message_id, "file_data", JSON.stringify(req.file));
+      } catch (err) {
+        console.error("Error setting initial Redis key. Process continues without cache.", err);
+      }
+    }
 
-      if (req.file.mimetype.startsWith("video/")) {
-        const hlsRelativeOutputDir = path.join(
-          "messages",
-          "attachment",
-          "hls",
-          conversationId,
-        );
-        const hlsAbsoluteOutputDir = path.join(
-          __dirname,
-          "..",
-          BASE_UPLOAD_DIR,
-          hlsRelativeOutputDir,
-        );
-        const hlsFileNamePrefix = `${req.userId}-video-${generateRandomAlphaNumeric()}`;
+    const conversationId = req.body.conversation_id;
+    let attachmentMetadata = null;
+    let finalUrl = null;
+
+    // --- Conditional logic for video vs. other attachments ---
+
+    if (req.file.mimetype.startsWith("video/")) {
+      try {
+        // --- Step 1: Probe the original file for metadata ---
+        if (uploadStatus === "UPLOAD_COMPLETE" || !uploadStatus) {
+          const originalProbedData = await getProbeData(originalFilePath);
+          const videoStream = originalProbedData.streams.find((s) => s.codec_type === "video");
+
+          attachmentMetadata = {
+            width: videoStream ? videoStream.width : null,
+            height: videoStream ? videoStream.height : null,
+            duration: originalProbedData.format.duration,
+            size: originalProbedData.format.size,
+            mimetype: req.file.mimetype,
+            bit_rate: originalProbedData.format.bit_rate,
+            avg_frame_rate: videoStream ? videoStream.avg_frame_rate : null,
+            display_aspect_ratio: videoStream ? videoStream.width / videoStream.height : null,
+            is_hls_converted: false,
+          };
+
+          try {
+            await redis.hSet(client_message_id, "status", "METADATA_EXTRACTED");
+            await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(attachmentMetadata));
+          } catch (err) {
+            console.error("Error updating Redis status to METADATA_EXTRACTED. Proceeding.", err);
+          }
+        } else if (uploadStatus === "METADATA_EXTRACTED") {
+          // Recovery case: load metadata from cache
+          attachmentMetadata = JSON.parse(await redis.hGet(client_message_id, "attachment_metadata"));
+        }
+
+        // --- Step 2: Convert to HLS ---
+        const hlsRelativeOutputDir = path.join("messages", "attachment", "hls", conversationId);
+        const hlsAbsoluteOutputDir = path.join(__dirname, "..", BASE_UPLOAD_DIR, hlsRelativeOutputDir);
+        const hlsFileNamePrefix = `${req.userId}-video-${client_message_id}`;
 
         await fs.promises.mkdir(hlsAbsoluteOutputDir, { recursive: true });
 
         const hlsPlaylistAbsolutePath = await convertVideoToHLS(
           originalFilePath,
           hlsAbsoluteOutputDir,
-          hlsFileNamePrefix,
+          hlsFileNamePrefix
         );
-        const hlsPlaylistRelativePath = path.relative(
-          path.join(__dirname, "..", BASE_UPLOAD_DIR),
-          hlsPlaylistAbsolutePath,
-        );
+        const hlsPlaylistRelativePath = path.relative(path.join(__dirname, "..", BASE_UPLOAD_DIR), hlsPlaylistAbsolutePath);
 
+        // --- Step 3: Finalize metadata and cache the result ---
         if (attachmentMetadata) {
           attachmentMetadata.mimetype = "application/x-mpegURL";
           attachmentMetadata.hls_playlist_url = `/${BASE_UPLOAD_DIR}/${hlsPlaylistRelativePath.replace(/\\/g, "/")}`;
@@ -1553,73 +1775,93 @@ router.post(
 
           try {
             const hlsProbedData = await getProbeData(hlsPlaylistAbsolutePath);
-            attachmentMetadata.duration =
-              hlsProbedData.format.duration || attachmentMetadata.duration;
-            attachmentMetadata.size =
-              hlsProbedData.format.size || attachmentMetadata.size;
-            attachmentMetadata.bit_rate =
-              hlsProbedData.format.bit_rate || attachmentMetadata.bit_rate;
+            attachmentMetadata.duration = hlsProbedData.format.duration || attachmentMetadata.duration;
+            attachmentMetadata.size = hlsProbedData.format.size || attachmentMetadata.size;
+            attachmentMetadata.bit_rate = hlsProbedData.format.bit_rate || attachmentMetadata.bit_rate;
           } catch (hlsProbeErr) {
             console.warn("FFprobe error on HLS playlist:", hlsProbeErr.message);
           }
         }
+        
+        finalUrl = `/${BASE_UPLOAD_DIR}/${hlsPlaylistRelativePath.replace(/\\/g, "/")}`;
 
+        // Final step after a successful HLS conversion.
         fs.unlink(originalFilePath, (err) => {
           if (err) console.error("Error deleting original video file:", err);
         });
 
-        res.status(200).json({
+        try {
+          await redis.hSet(client_message_id, "status", "SUCCESS");
+          await redis.hSet(client_message_id, "url", finalUrl);
+          await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(attachmentMetadata));
+        } catch (err) {
+          console.error("Error updating Redis with final SUCCESS data. Proceeding.", err);
+        }
+        
+        return res.status(200).json({
           message: "Video uploaded and converted to HLS successfully",
-          url: attachmentMetadata
-            ? attachmentMetadata.hls_playlist_url
-            : `/${BASE_UPLOAD_DIR}/${hlsPlaylistRelativePath.replace(/\\/g, "/")}`,
+          url: finalUrl,
           attachment_metadata: attachmentMetadata,
         });
-      } else {
-        const attachmentRelativeOutputDir = path.join(
-          "messages",
-          "attachment",
-          conversationId,
-        );
-        const attachmentAbsoluteOutputDir = path.join(
-          __dirname,
-          "..",
-          BASE_UPLOAD_DIR,
-          attachmentRelativeOutputDir,
-        );
-        const newAttachmentFileName = `${req.userId}-${generateRandomAlphaNumeric()}${path.extname(req.file.originalname)}`;
-        const newAttachmentAbsolutePath = path.join(
-          attachmentAbsoluteOutputDir,
-          newAttachmentFileName,
-        );
 
-        await fs.promises.mkdir(attachmentAbsoluteOutputDir, {
-          recursive: true,
-        });
+      } catch (err) {
+        console.error("Video processing error:", err);
+        // The last successful state is already stored in Redis for future recovery.
+        return res.status(500).json({ message: "Video processing failed." });
+      }
+
+    } else {
+      // Path for non-video attachments (remains the same as before)
+      const attachmentRelativeOutputDir = path.join("messages", "attachment", conversationId);
+      const attachmentAbsoluteOutputDir = path.join(__dirname, "..", BASE_UPLOAD_DIR, attachmentRelativeOutputDir);
+      const newAttachmentFileName = `${req.userId}-${generateRandomAlphaNumeric()}${path.extname(req.file.originalname)}`;
+      const newAttachmentAbsolutePath = path.join(attachmentAbsoluteOutputDir, newAttachmentFileName);
+
+      try {
+        await fs.promises.mkdir(attachmentAbsoluteOutputDir, { recursive: true });
         await fs.promises.rename(originalFilePath, newAttachmentAbsolutePath);
+        
+        const newAttachmentRelativePath = path.join(attachmentRelativeOutputDir, newAttachmentFileName);
+        finalUrl = `/${BASE_UPLOAD_DIR}/${newAttachmentRelativePath.replace(/\\/g, "/")}`;
 
-        const newAttachmentRelativePath = path.join(
-          attachmentRelativeOutputDir,
-          newAttachmentFileName,
-        );
-
-        if (attachmentMetadata) {
-          attachmentMetadata.mimetype = req.file.mimetype;
-          attachmentMetadata.is_hls_converted = false;
+        try {
+          const originalProbedData = await getProbeData(newAttachmentAbsolutePath);
+          attachmentMetadata = {
+            mimetype: req.file.mimetype,
+            size: originalProbedData.format.size,
+            duration: originalProbedData.format.duration,
+            bit_rate: originalProbedData.format.bit_rate,
+            is_hls_converted: false,
+          };
+        } catch (err) {
+          console.error("FFprobe error on non-video file:", err.message);
+          attachmentMetadata = {
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            is_hls_converted: false,
+          };
         }
 
-        res.status(200).json({
+        await redis.hSet(client_message_id, "status", "SUCCESS");
+        await redis.hSet(client_message_id, "url", finalUrl);
+        await redis.hSet(client_message_id, "attachment_metadata", JSON.stringify(attachmentMetadata));
+
+        return res.status(200).json({
           message: "Attachment uploaded successfully",
-          url: `/${BASE_UPLOAD_DIR}/${newAttachmentRelativePath.replace(/\\/g, "/")}`,
+          url: finalUrl,
           attachment_metadata: attachmentMetadata,
         });
+        
+      } catch (error) {
+        console.error("Attachment processing error:", error);
+        // If any step fails, the key remains UPLOAD_COMPLETE for a future retry.
+        return res.status(500).json({ message: "Attachment processing failed." });
       }
-    } catch (error) {
-      console.error("Attachment upload/conversion error:", error);
-      res.status(500).json({ message: error.message });
     }
   },
 );
+
+
 
 router.get("/rooms", authenticateAccess, async (req, res) => {
   try {
