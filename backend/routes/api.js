@@ -2108,22 +2108,63 @@ router.post('/msg/:msgId/edit', authenticateAccess, async (req, res) => {
 
 router.delete('/msg/:msgId/hardDelete/', authenticateAccess, async (req, res) => {
    try {
-      const msg = await Message.findByPk(req.params.msgId)
-      if(!msg) {
-         return res.status(404).json('Message not found...')
+      const msg = await Message.findByPk(req.params.msgId);
+      if (!msg) {
+         return res.status(404).json('Message not found...');
       }
-      if(msg) {
-         if(msg.sender_id != req.userId) {
-            return res.status(403).json('This message can not be hard deleted by you ')
-         }
-         await msg.destroy()
+      
+      if (msg.sender_id != req.userId) {
+         return res.status(403).json('This message can not be hard deleted by you');
       }
-      res.status(200).json('ok')
+      
+      // Define a base path to prevent path traversal attacks
+      const basePath = path.join(__dirname, '..');
+      
+      const filePromises = [];
+      
+      // Use fs.promises for cleaner async/await
+      const fs = require('fs/promises');
+      
+      if (msg.content.attachment_type === 'file' || msg.content.attachment_type === 'image') {
+         const filePath = path.join(basePath, msg.content.attachment);
+         filePromises.push(fs.unlink(filePath));
+         
+      } else if (msg.content.voice_note) {
+         const voiceNotePath = path.join(basePath, msg.content.voice_note);
+         filePromises.push(fs.unlink(voiceNotePath));
+         
+      } else if (msg.content.attachment_type === 'video') {
+         const pathToM3u8 = path.join(basePath, msg.content.attachment);
+         const content = await fs.readFile(pathToM3u8, { encoding: 'utf8' });
+         
+         const tsFilesAvailable = content.split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.startsWith('#'));
+            
+         // Collect all promises for deletion
+         tsFilesAvailable.forEach(file => {
+            const filePath = path.join(basePath, path.dirname(msg.content.attachment), file);
+            filePromises.push(fs.unlink(filePath));
+         });
+         
+         filePromises.push(fs.unlink(pathToM3u8));
+      }
+      
+      // Wait for all file deletions to complete before deleting the database record
+      await Promise.all(filePromises);
+      
+      // Delete the message from the database
+      await msg.destroy();
+      
+      res.status(200).json('ok');
+      
    } catch (e) {
-      console.error(e.message)
-      res.status(500).json({message: e.message})
+      console.error(e.message);
+      // It's a good practice to return a more detailed error message to the client
+      // while not exposing internal server details.
+      res.status(500).json({ message: 'Failed to delete message and its attachments.' });
    }
-})
+});
 
 
 

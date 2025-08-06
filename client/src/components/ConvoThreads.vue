@@ -1463,6 +1463,8 @@ const userIstyping = ref(false)
 const userIsRecording = ref(false)
 const userWhoIsOnStatus = ref(null)
 
+let autoCleanUpTimer;
+
 function createStatus({status, convoId, user, type}) {
    
    if(convoId !== props.currentConversation.id) return
@@ -1470,10 +1472,15 @@ function createStatus({status, convoId, user, type}) {
       chatContainer.value.scrollTop = chatContainer.value.scrollHeight
    }
    if(type === "typing") {
+      clearTimeout(autoCleanUpTimer)
       userIsRecording.value = false
       if(status) {
          userIstyping.value = true
          userWhoIsOnStatus.value = user
+         autoCleanUpTimer = setTimeout(() => {
+            userIstyping.value = false
+            userWhoIsOnStatus.value = null
+         }, 3000)
       } else {
          userIstyping.value = false
          userWhoIsOnStatus.value = null
