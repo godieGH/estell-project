@@ -64,7 +64,7 @@
           @click="selectConversation(convo.id, convo.type)"
         >
           <q-card-section
-            v-if="convo.participants.length > 0"
+            v-if="convo.participants.length > 0 && convo.last_message_at"
             class="row items-center no-wrap q-py-sm"
           >
             <q-item-section avatar>
