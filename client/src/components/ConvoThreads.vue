@@ -1311,6 +1311,7 @@ const swipingMessage = ref(null)
 const panX = ref(0)
 const startX = ref(0)
 const startY = ref(0)
+const isAnInstanceOfVideo = ref(false)
 
 const swipeToReplyStyle = computed(() => {
   return {
@@ -1320,6 +1321,9 @@ const swipeToReplyStyle = computed(() => {
 })
 
 function startSwipe(e) {
+  isAnInstanceOfVideo.value = e.target instanceof HTMLVideoElement
+  if(isAnInstanceOfVideo.value) return
+  
   if (!e.touches || e.touches.length === 0) return
   startX.value = e.touches[0].clientX
   startY.value = e.touches[0].clientY
@@ -1328,6 +1332,7 @@ function startSwipe(e) {
 let hasVibrated = false
 
 function swipeToReply(e, msg) {
+  if(isAnInstanceOfVideo.value) return
   if (msg.sender_type !== 'user') {
     return
   }
